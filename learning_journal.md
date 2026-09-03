@@ -292,4 +292,95 @@ button in VS Code (confirmed using Python 3.11 correctly, shown in status bar).
 
 ---
 
-## Day 4 — *(pending)*
+## Day 4 — Extracting Landmark Coordinates
+
+### Concept learned
+`draw_landmarks()` handles reading + drawing landmark data automatically, but to
+actually *use* that data (for pinch detection, drawing trails, etc.) the raw
+coordinates need to be read directly. MediaPipe gives coordinates as
+**normalized values** (0 to 1) representing position as a percentage of the
+frame — not actual pixels. This makes detection resolution-independent (same
+data works on any camera size), but means a conversion step is required before
+using OpenCV to draw at that position:
+```
+pixel_x = normalized_x × frame_width
+pixel_y = normalized_y × frame_height
+```
+
+### Key building blocks
+- `hand_landmarks.landmark` — a list of 21 raw points, each with `.x`, `.y`
+  (and `.z`, depth — not used yet)
+- `frame.shape` — returns `(height, width, channels)`, used to get the
+  dimensions needed for the pixel conversion
+- Landmark index numbers are fixed conventions: index **8** = index fingertip,
+  index **4** = thumb tip (memorizing key indices as needed, not all 21 yet)
+
+### Code — Day 4 (built on top of Day 3's file)
+```python
+import cv2
+import mediapipe as mp
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands = 2,
+    min_detection_confidence = 0.7
+)
+mp_drawing = mp.solutions.drawing_utils
+
+cap = cv2.VideoCapture(0)
+print("Press 'q' to exit!")
+while True:
+    success, frame = cap.read()
+    if not success:
+        print("Wasn't able to capture the frame")
+        break
+    frame = cv2.flip(frame, 1)
+    h, w, _ = frame.shape
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb_frame)
+
+    if result.multi_hand_landmarks:
+        print(f"Hands Found: {len(result.multi_hand_landmarks)}")
+        for hand_landmarks in result.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            landmark_list = []
+            for lm in hand_landmarks.landmark:
+                px = int(lm.x * w)
+                py = int(lm.y * h)
+                landmark_list.append((px, py))
+
+            print(f"index fingertip at : {landmark_list[8]}")
+            print(f"thumb fingertip at : {landmark_list[4]}")
+
+    cv2.imshow("Day2-- Taha's Webcam Feed (hand detection test)", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+### Practice tasks assigned
+1. Convert all 21 normalized landmark points to pixel coordinates each frame
+2. Print the index fingertip's pixel position (landmark 8)
+3. Challenge: also print the thumb tip's pixel position (landmark 4)
+
+### My completed task / code
+All 3 tasks completed correctly in one pass, including the thumb-tip challenge
+without needing extra guidance. Confirmed both fingertip coordinates print and
+update live as the hand moves.
+
+### Notes / things that tripped me up
+- Accidentally deleted/modified the working file mid-session — recovered it
+  instantly using `git checkout -- <filename>.py`, which restores a file back
+  to its state from the last commit. First real hands-on proof of why the
+  daily Git habit matters (this would have meant redoing all of Day 1–3's
+  code from scratch otherwise).
+- Learned that `landmark_list` gets rebuilt fresh inside the per-hand loop —
+  fine for single-hand use now, but will need separate storage per hand once
+  working with two hands later (needed for the Week 4 two-hand gesture).
+
+---
+
+## Day 5 — *(pending)*

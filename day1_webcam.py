@@ -16,6 +16,7 @@ while True:
         print("Wasn't able to capture the frame")
         break
     frame = cv2.flip(frame, 1)
+    h, w,_ = frame.shape
     rgb_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
     result = hands.process(rgb_frame)
 
@@ -24,6 +25,15 @@ while True:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_drawing.draw_landmarks(frame, hand_landmarks,mp_hands.HAND_CONNECTIONS)
 
+            landmark_list=[]
+            for lm in hand_landmarks.landmark:
+                px = int(lm.x * w)
+                py = int(lm.y * h)
+                landmark_list.append((px,py))
+
+            print(f"index fingertip at : {landmark_list[8]}")
+            print(f"thumb fingertip at : {landmark_list[4]}")
+          
     cv2.imshow("Day2-- Taha's Webcam Feed (hand detection test)", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
