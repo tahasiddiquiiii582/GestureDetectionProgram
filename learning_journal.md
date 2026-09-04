@@ -383,4 +383,415 @@ update live as the hand moves.
 
 ---
 
-## Day 5 — *(pending)*
+## Day 5 — Identifying Wrist & Middle Knuckle (Palm-Size Reference)
+
+### Concept learned
+Detecting a "pinch" using raw pixel distance between thumb and index tip is
+unreliable — the same physical pinch produces a small pixel gap when the hand
+is far from the camera, and a large pixel gap when close. The fix: measure the
+pinch distance **relative to the size of the hand itself**, using a stable
+reference "ruler" that scales proportionally with hand distance — the
+wrist-to-middle-knuckle distance. This doesn't change based on finger position,
+only based on how close/far the whole hand is.
+
+### Key landmarks needed
+- Landmark **0** → wrist
+- Landmark **9** → base knuckle of the middle finger
+
+### Code — Day 5 (built on top of Day 4's file)
+```python
+import cv2
+import mediapipe as mp
+import math
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands = 2,
+    min_detection_confidence = 0.7
+)
+mp_drawing = mp.solutions.drawing_utils
+
+cap = cv2.VideoCapture(0)
+print("Press 'q' to exit!")
+while True:
+    success, frame = cap.read()
+    if not success:
+        print("Wasn't able to capture the frame")
+        break
+    frame = cv2.flip(frame, 1)
+    h, w, _ = frame.shape
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb_frame)
+
+    if result.multi_hand_landmarks:
+        print(f"Hands Found: {len(result.multi_hand_landmarks)}")
+        for hand_landmarks in result.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            landmark_list = []
+            for lm in hand_landmarks.landmark:
+                px = int(lm.x * w)
+                py = int(lm.y * h)
+                landmark_list.append((px, py))
+
+            wrist = landmark_list[0]
+            middle_knuckle = landmark_list[9]
+            index_tip = landmark_list[8]
+            thumb_tip = landmark_list[4]
+
+            x1, y1 = wrist
+            x2, y2 = middle_knuckle
+            palm_size = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+            print(f"wrist at : {wrist}")
+            print(f"middle knuckle at : {middle_knuckle}")
+            print(f"index fingertip at : {index_tip}")
+            print(f"thumb fingertip at : {thumb_tip}")
+            print(f"palm size is : {palm_size}")
+
+    cv2.imshow("Day2-- Taha's Webcam Feed (hand detection test)", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+### Practice tasks assigned
+1. Extract wrist (landmark 0) and middle knuckle (landmark 9) coordinates
+2. Challenge: calculate the straight-line distance between them using the
+   Pythagorean theorem via `math.sqrt()`, and print it as `palm_size`
+
+### My completed task / code
+Both tasks completed independently, correctly applying the distance formula
+without needing the answer given directly. Verified behavior via a live test
+with two hands in frame simultaneously:
+- Palm size stayed stable (~78–92) while fingers moved around a lot —
+  confirms it's independent of finger position
+- Palm size increased (~98–104) as the hand moved closer to the camera later
+  in the test — confirms it correctly scales with distance
+
+### Notes / things that tripped me up
+- None — clean implementation on the first attempt, including correctly
+  unpacking tuples (`x1, y1 = wrist`) before applying the formula
+
+---
+
+## Day 6 — Building the Normalized Pinch Detector
+
+### Concept learned
+Combining Day 4's coordinates and Day 5's palm-size reference into the actual
+"hard part" technique: dividing raw pinch distance by palm size cancels out
+the effect of hand distance from the camera, because both values shrink/grow
+proportionally together. The resulting `pinch_ratio` stays consistent for the
+same physical pinch regardless of how close/far the hand is. A **threshold**
+(a manually chosen cutoff number) then converts that continuous ratio into a
+binary decision: PINCHED or OPEN.
+
+### Formula
+```
+pinch_ratio = pinch_distance / palm_size
+```
+Threshold picked by testing on real data, not calculated — this is a
+calibration step, not a formula.
+
+### Code — Day 6 (built on top of Day 5's file)
+```python
+import cv2
+import mediapipe as mp
+import math
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands = 2,
+    min_detection_confidence = 0.7
+)
+mp_drawing = mp.solutions.drawing_utils
+
+cap = cv2.VideoCapture(0)
+print("Press 'q' to exit!")
+while True:
+    success, frame = cap.read()
+    if not success:
+        print("Wasn't able to capture the frame")
+        break
+    frame = cv2.flip(frame, 1)
+    h, w, _ = frame.shape
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb_frame)
+
+    if result.multi_hand_landmarks:
+        print(f"Hands Found: {len(result.multi_hand_landmarks)}")
+        for hand_landmarks in result.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            landmark_list = []
+            for lm in hand_landmarks.landmark:
+                px = int(lm.x * w)
+                py = int(lm.y * h)
+                landmark_list.append((px, py))
+
+            wrist = landmark_list[0]
+            middle_knuckle = landmark_list[9]
+            index_tip = landmark_list[8]
+            thumb_tip = landmark_list[4]
+
+            x1, y1 = wrist
+            x2, y2 = middle_knuckle
+            palm_size = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+            x3, y3 = thumb_tip
+            x4, y4 = index_tip
+            pinch_distance = math.sqrt((x4 - x3) ** 2 + (y4 - y3) ** 2)
+
+            pinch_ratio = pinch_distance / palm_size
+
+            if pinch_ratio < 0.4:
+                pinch_status = "Pinched"
+            else:
+                pinch_status = "Not Pinched"
+
+            print(f"pinch ratio : {pinch_ratio:.2f}---->{pinch_status}")
+
+    cv2.imshow("Day6-- Taha's Webcam Feed (The hard part test)", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+### Practice tasks assigned
+1. Calculate `pinch_distance` between thumb tip and index tip
+2. Normalize it: `pinch_ratio = pinch_distance / palm_size`
+3. Set an initial threshold and test it live, tuning based on observed values
+
+### My completed task / code
+All tasks completed correctly on first attempt. Ran a live calibration test:
+- **Pinched (steady):** ratio consistently ~0.03–0.13
+- **Fully open (steady):** ratio consistently ~1.0–1.2
+- **Mid-transition (finger opening/closing):** ratio passed through the
+  ambiguous 0.3–0.6 range, as expected during actual motion
+- **Conclusion:** kept the initial threshold of `0.4` — it sits safely in the
+  gap between the two steady-state ranges, confirmed using real recorded data
+  rather than guessing
+
+### Notes / things that tripped me up
+- Understood that a threshold is a calibration decision, not something with a
+  single "correct" mathematical answer — it depends on the specific hand/
+  camera setup and must be verified against real observed data
+- Recognized that ambiguous ratio values during the actual pinch/release
+  motion are expected and not a sign of a bug
+
+### How the threshold was actually found (deeper explanation)
+Initially unclear how "0.4" was decided, so broke it down step by step:
+
+1. **The goal:** find one number that separates "pinched" from "not pinched" —
+   not a formula, just a dividing line (like deciding a height cutoff for
+   "short" vs "tall").
+
+2. **Looked only at the steady extremes** in the recorded data (ignored the
+   messy in-between/transition frames for now):
+   - Steady **pinched** state → ratio consistently clustered around **0.03–0.13**
+   - Steady **open** state → ratio consistently clustered around **1.0–1.2**
+
+3. **Noticed the gap:** between roughly 0.15 and 0.9, the ratio almost never
+   appeared during steady states — that whole range was empty except for the
+   brief instants where fingers were physically mid-motion between pinched
+   and open (which naturally has to pass through those in-between values).
+
+4. **Any number in that empty gap would work as a threshold.** `0.4` (the
+   original guess from the Day 6 code) happened to sit comfortably inside that
+   gap — far enough from the pinched cluster (0.03–0.13) that small hand
+   shake wouldn't falsely trigger "Not Pinched," and far enough from the open
+   cluster (1.0–1.2) that it wouldn't falsely trigger "Pinched" either.
+
+**Key takeaway:** the threshold wasn't calculated — it was *verified*. The
+number 0.4 was a starting guess; running the program and checking where my
+own hand's real numbers landed confirmed it was a safe choice. If the open-hand
+numbers had instead come out closer to 0.3–0.5, that same 0.4 would have been
+a bad pick sitting right inside the "open" cluster, and a smaller number
+(e.g. 0.15) would have been needed instead.
+
+---
+
+## Day 7 — Smoothing Out the Flicker (Stability Buffer)
+
+### Concept learned
+A single frame's raw pinch reading can be unreliable during the actual motion
+of pinching/releasing, since the ratio passes through ambiguous in-between
+values. This causes "flickering" — the status rapidly switching back and forth
+for a few frames even during one smooth motion. The fix: a **rolling history**
+of the last N frames' raw readings, with the final status decided by
+**majority vote** rather than trusting any single frame. This is a form of
+smoothing/debouncing.
+
+### Key building blocks
+- `pinch_history = []` — created once, outside the loop, so it persists and
+  accumulates across frames
+- `.append(value)` — adds the newest reading to the end of the list
+- `.pop(0)` — removes the oldest reading once the list exceeds `buffer_size`,
+  keeping it a fixed-size "sliding window"
+- `.count(True)` — counts how many `True` values are currently in the list
+- `buffer_size // 2` — integer division, used to check for "more than half"
+
+### Code — Day 7 (built on top of Day 6's file, redundant duplicate
+threshold check removed)
+```python
+import cv2
+import mediapipe as mp
+import math
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands = 2,
+    min_detection_confidence = 0.7
+)
+mp_drawing = mp.solutions.drawing_utils
+
+cap = cv2.VideoCapture(0)
+print("Press 'q' to exit!")
+
+pinch_history = []
+buffer_size = 5
+
+while True:
+    success, frame = cap.read()
+    if not success:
+        print("Wasn't able to capture the frame")
+        break
+    frame = cv2.flip(frame, 1)
+    h, w, _ = frame.shape
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb_frame)
+
+    if result.multi_hand_landmarks:
+        for hand_landmarks in result.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            landmark_list = []
+            for lm in hand_landmarks.landmark:
+                px = int(lm.x * w)
+                py = int(lm.y * h)
+                landmark_list.append((px, py))
+
+            wrist = landmark_list[0]
+            middle_knuckle = landmark_list[9]
+            index_tip = landmark_list[8]
+            thumb_tip = landmark_list[4]
+
+            x1, y1 = wrist
+            x2, y2 = middle_knuckle
+            palm_size = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+            x3, y3 = thumb_tip
+            x4, y4 = index_tip
+            pinch_distance = math.sqrt((x4 - x3) ** 2 + (y4 - y3) ** 2)
+
+            pinch_ratio = pinch_distance / palm_size
+            is_pinched_now = pinch_ratio < 0.4
+
+            pinch_history.append(is_pinched_now)
+            if len(pinch_history) > buffer_size:
+                pinch_history.pop(0)
+
+            if pinch_history.count(True) > buffer_size // 2:
+                pinch_status = "Pinched"
+            else:
+                pinch_status = "Not Pinched"
+
+            print(f"raw: {is_pinched_now} | smoothed: {pinch_status} | history: {pinch_history}")
+
+    cv2.imshow("Day 7 - Smoothed Pinch Detection", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+### Practice tasks assigned
+1. Add rolling history + majority-vote smoothing on top of Day 6's pinch detection
+2. Compare `raw` vs `smoothed` output while rapidly pinching/releasing
+3. Challenge: test `buffer_size = 10` vs `5` and observe the tradeoff
+
+### My completed task / code
+All tasks completed, including finding and cleaning up a redundant duplicate
+threshold check left over from Day 6 (the code worked either way since the
+second calculation simply overwrote the first, but removing it made the logic
+clearer). Ran a real comparison test between buffer sizes 5 and 10:
+
+- **buffer_size = 5:** smoothed status lagged ~3 frames behind the real
+  release before flipping to "Not Pinched"
+- **buffer_size = 10:** smoothed status lagged ~8 frames behind before
+  flipping — nearly triple the delay
+- **Conclusion:** larger buffers are more resistant to flicker but introduce
+  more response lag. Since Day 6's data already showed a clean, well-separated
+  pinch/open range (not particularly noisy), a smaller buffer (5) is the
+  better choice for this project — especially important for the upcoming
+  drawing feature, where lag would cause the line to visibly overshoot past
+  where the pinch was actually released. Decided to keep `buffer_size = 5`
+  going forward.
+
+### Notes / things that tripped me up
+- Found and removed a leftover duplicate `if/else` threshold block from Day 6
+  that was harmless but redundant (its result got immediately overwritten by
+  the smoothed version)
+- Directly observed the classic responsiveness-vs-stability tradeoff in
+  smoothing/filtering — a general concept that shows up throughout
+  programming, not just this project
+
+### How the buffer/sliding-window logic actually works (deeper explanation)
+Initially unclear how the buffer caused lag, so broke it down step by step:
+
+**What a buffer is:** a small list that holds only the most recent N readings —
+like a sticky note with a student's last 5 quiz scores, where each new score
+added means the oldest one gets crossed off, always keeping exactly 5 numbers.
+
+**The two-step mechanism each frame:**
+```python
+pinch_history.append(is_pinched_now)      # always add the new reading
+if len(pinch_history) > buffer_size:      # once it's too big...
+    pinch_history.pop(0)                  # ...remove the oldest one
+```
+This creates a "sliding window" — always showing the most recent N frames,
+constantly forgetting anything older.
+
+**Why bigger buffers cause more lag — the majority threshold changes:**
+- `buffer_size = 5` → majority needed = `5 // 2 = 2`, so **3 out of 5** matching
+  readings flips the vote
+- `buffer_size = 10` → majority needed = `10 // 2 = 5`, so **6 out of 10**
+  matching readings flips the vote
+
+**Traced an actual release frame-by-frame for both sizes**, starting from a
+list of all `True` (pinched) and feeding in new `False` readings one at a time:
+- Buffer 5: `[T,T,T,T,T]` → `[T,T,T,T,F]` (4) → `[T,T,T,F,F]` (3) →
+  `[T,T,F,F,F]` (2, flips) — **took 3 new False frames** to flip
+- Buffer 10: needed to push through 6 new False frames before the count of
+  True dropped from 10 down to below the majority of 5
+
+**Key takeaway:** a bigger buffer doesn't just mean "a longer list" — it means
+more old data has to get physically pushed out (via `.pop(0)`) before new
+information can outnumber it and win the vote. That's the entire mechanism
+behind the slowdown — same counting rule as buffer_size=5, just requiring more
+matching consecutive frames to cross the higher threshold.
+
+---
+
+## Week 1 Checkpoint — Complete ✅
+By the end of Day 7, the program reliably:
+- Captures and displays webcam video (Day 1–2)
+- Detects one or two hands live using MediaPipe (Day 3)
+- Extracts and converts all 21 landmark coordinates to pixel positions (Day 4)
+- Calculates a distance-independent palm-size reference (Day 5)
+- Detects a pinch gesture normalized against hand size, tested and calibrated
+  on real data (Day 6)
+- Smooths the pinch detection against frame-to-frame flicker, with the
+  buffer size choice backed by a real responsiveness-vs-stability test (Day 7)
+
+Ready to move into Week 2: replacing MediaPipe's default drawing with a
+custom-styled neon HUD.
+
+---
+
+## Day 8 — *(pending)*

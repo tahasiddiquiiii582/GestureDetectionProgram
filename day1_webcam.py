@@ -1,5 +1,6 @@
 import cv2
 import mediapipe as mp
+import math
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
@@ -10,6 +11,9 @@ mp_drawing = mp.solutions.drawing_utils
 
 cap = cv2.VideoCapture(0)
 print("Press 'q' to exit!")
+
+pinch_history = []
+buffer_size= 10
 while True:
     success, frame = cap.read()
     if not success:
@@ -31,10 +35,42 @@ while True:
                 py = int(lm.y * h)
                 landmark_list.append((px,py))
 
-            print(f"index fingertip at : {landmark_list[8]}")
-            print(f"thumb fingertip at : {landmark_list[4]}")
+            wrist = landmark_list[0]
+            middle_knuckle = landmark_list[9]
+            index_tip = landmark_list[8]
+            thumb_tip = landmark_list[4]
+
+            x1,y1 = wrist
+            x2,y2 = middle_knuckle
+            palm_size = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+
+            x3,y3 = thumb_tip
+            x4,y4 = index_tip
+            pinch_distance = math.sqrt((x4-x3)**2 + (y4-y3)**2)
+
+            pinch_ratio = pinch_distance/palm_size
+
+            is_pinched_now = pinch_ratio<0.4
+
+            pinch_history.append(is_pinched_now)
+            if len(pinch_history)>buffer_size:
+                pinch_history.pop(0)
+
+            if pinch_history.count(True) > buffer_size // 5:
+                pinch_status = "Pinched"
+            else:
+                pinch_status = "Not Pinched"
+
+        
+            print(f"pinch ratio : {pinch_ratio:.2f}---->{pinch_status}")
+            print(f"raw : {is_pinched_now} | smoothed: {pinch_status} | pinch history: {pinch_history}")
+            print(f"wrist at : {wrist}")
+            print(f"middle knuckle at : {middle_knuckle}")
+            print(f"index fingertip at : {index_tip}")
+            print(f"thumb fingertip at : {thumb_tip}")
+            print(f"palm size is : {palm_size}")
           
-    cv2.imshow("Day2-- Taha's Webcam Feed (hand detection test)", frame)
+    cv2.imshow("Day6-- Taha's Webcam Feed (The hard part test)", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
