@@ -794,4 +794,202 @@ custom-styled neon HUD.
 
 ---
 
-## Day 8 — *(pending)*
+## Day 8 — Building a Custom HUD (Part 1: Nodes & Skeleton)
+
+### Concept learned
+MediaPipe's `draw_landmarks()` was a convenience function doing two things
+automatically: drawing a circle at each of the 21 points, and drawing lines
+between the correct pairs of points to form a skeleton shape. Since all 21
+pixel coordinates were already being extracted since Day 4, both of these can
+be done manually instead — the first real step toward a custom-styled HUD
+instead of MediaPipe's default plain look, as specifically called out in the
+boss's reference video.
+
+### Key building block
+- `mp_hands.HAND_CONNECTIONS` — a list of landmark index pairs (e.g. `(5, 6)`)
+  that MediaPipe has pre-determined should be visually connected to form a
+  correct hand skeleton shape. Reused directly instead of building this
+  mapping manually.
+
+### Code — Day 8 (built on top of Day 7's file, `mp_drawing.draw_landmarks()`
+replaced with manual drawing)
+```python
+import cv2
+import mediapipe as mp
+import math
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands = 2,
+    min_detection_confidence = 0.7
+)
+# mp_drawing no longer needed — drawing manually now
+
+cap = cv2.VideoCapture(0)
+print("Press 'q' to exit!")
+
+pinch_history = []
+buffer_size = 5
+
+while True:
+    success, frame = cap.read()
+    if not success:
+        print("Wasn't able to capture the frame")
+        break
+    frame = cv2.flip(frame, 1)
+    h, w, _ = frame.shape
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb_frame)
+
+    if result.multi_hand_landmarks:
+        for hand_landmarks in result.multi_hand_landmarks:
+            landmark_list = []
+            for lm in hand_landmarks.landmark:
+                px = int(lm.x * w)
+                py = int(lm.y * h)
+                landmark_list.append((px, py))
+
+            # draw connecting lines (the "skeleton") — drawn first
+            for connection in mp_hands.HAND_CONNECTIONS:
+                start_idx, end_idx = connection
+                start_point = landmark_list[start_idx]
+                end_point = landmark_list[end_idx]
+                cv2.line(frame, start_point, end_point, (0, 255, 255), 2)  # yellow
+
+            # draw nodes on top of the lines
+            for point in landmark_list:
+                cv2.circle(frame, point, 5, (255, 255, 0), -1)  # cyan
+
+            wrist = landmark_list[0]
+            middle_knuckle = landmark_list[9]
+            index_tip = landmark_list[8]
+            thumb_tip = landmark_list[4]
+
+            x1, y1 = wrist
+            x2, y2 = middle_knuckle
+            palm_size = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+            x3, y3 = thumb_tip
+            x4, y4 = index_tip
+            pinch_distance = math.sqrt((x4 - x3) ** 2 + (y4 - y3) ** 2)
+
+            pinch_ratio = pinch_distance / palm_size
+            is_pinched_now = pinch_ratio < 0.4
+
+            pinch_history.append(is_pinched_now)
+            if len(pinch_history) > buffer_size:
+                pinch_history.pop(0)
+
+            if pinch_history.count(True) > buffer_size // 2:
+                pinch_status = "Pinched"
+            else:
+                pinch_status = "Not Pinched"
+
+    cv2.imshow("Day 8 - Custom HUD (Shape Only)", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+### Practice tasks assigned
+1. Replace `mp_drawing.draw_landmarks()` with manual `cv2.line()` +
+   `cv2.circle()` drawing using `mp_hands.HAND_CONNECTIONS`
+2. Challenge: use two different colors for lines vs. dots
+
+### My completed task / code
+Both tasks completed successfully — first tested with matching magenta
+lines/dots to confirm the skeleton shape was correct, then completed the
+color challenge with yellow lines + cyan dots, a clean two-tone look.
+Correctly unpacked `start_idx, end_idx` from each connection pair and looked
+up their coordinates in `landmark_list`.
+
+### Notes / things that tripped me up
+- None — clean execution, correctly understood that `HAND_CONNECTIONS` is
+  just a list of index pairs rather than something needing manual calculation
+
+---
+
+## Day 9 — Adding the Glow Effect
+
+### Concept learned
+A real "neon" glow is created by drawing shapes on a separate blank layer,
+heavily blurring that layer (spreading the bright color outward into a soft
+halo), then blending the blurred result back onto the real camera frame. A
+sharp version is drawn again on top afterward so the shape keeps a crisp,
+readable core in addition to the soft glow around it — matching how real neon
+signs look (bright defined core + soft spreading light).
+
+### Key building blocks
+- `np.zeros_like(frame)` — creates a blank black canvas matching `frame`'s
+  exact dimensions; first direct use of NumPy in the project
+- Drawing on a separate `glow_layer` instead of `frame` directly, so the blur
+  step doesn't affect the actual camera image
+- `cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)` — spreads bright
+  pixels outward; kernel size must be odd, bigger = softer/wider glow
+- `cv2.add(frame, blurred_layer)` — merges the blurred glow's brightness onto
+  the real frame
+
+### Code — Day 9 (added to the Week 2 starter file)
+```python
+import numpy as np  # new import needed
+
+glow_layer = np.zeros_like(frame)
+
+for connection in mp_hands.HAND_CONNECTIONS:
+    start_idx, end_idx = connection
+    start_point = landmark_list[start_idx]
+    end_point = landmark_list[end_idx]
+    cv2.line(glow_layer, start_point, end_point, (0, 255, 255), 4)
+
+for point in landmark_list:
+    cv2.circle(glow_layer, point, 8, (255, 255, 0), -1)
+
+blurred_layer = cv2.GaussianBlur(glow_layer, (25, 25), 0)
+frame = cv2.add(frame, blurred_layer)
+
+# sharp version drawn on top for a crisp core
+for connection in mp_hands.HAND_CONNECTIONS:
+    start_idx, end_idx = connection
+    start_point = landmark_list[start_idx]
+    end_point = landmark_list[end_idx]
+    cv2.line(frame, start_point, end_point, (0, 255, 255), 2)
+
+for point in landmark_list:
+    cv2.circle(frame, point, 5, (255, 255, 0), -1)
+```
+
+### Practice tasks assigned
+1. Add the glow-layer technique on top of the Day 8 skeleton
+2. Challenge: compare blur kernel sizes (15,15) vs (45,45) and observe the
+   difference in glow softness/spread
+
+### My completed task / code
+Glow effect implemented successfully — clear visible halo around the hand
+skeleton in all tests. Initial kernel-size comparison (15 vs 45) looked
+visually similar at first glance, which led to a useful debugging discussion:
+
+- **Cause identified:** `cv2.add()` clips brightness at 255, so the bright
+  central area of the glow can look similarly "maxed out" across different
+  kernel sizes on top of a busy, textured camera background — masking the
+  real difference, which mostly shows up in the fainter, harder-to-see outer
+  fringe of the glow.
+- **Fix/technique learned:** viewing the `blurred_layer` alone (via a separate
+  `cv2.imshow()` call, before merging with the real frame) isolates the glow
+  from the busy background and clipping effects, making the kernel-size
+  difference clearly visible.
+- **Key takeaway:** code can be working correctly even when a visual change
+  is hard to perceive by eye against a distracting background — isolating
+  the one variable being tested (e.g. viewing a layer alone, against plain
+  black) is a useful general debugging technique, not just specific to this
+  project.
+
+### Notes / things that tripped me up
+- Initially assumed no visible difference meant something was wrong with the
+  blur code, when actually the code was correct and the issue was purely
+  about how the comparison was being visually observed
+
+---
+
+## Day 10 — *(pending)*

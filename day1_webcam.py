@@ -1,13 +1,13 @@
 import cv2
 import mediapipe as mp
 import math
+import numpy as np
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     max_num_hands = 2,
     min_detection_confidence = 0.7
 )
-mp_drawing = mp.solutions.drawing_utils
 
 cap = cv2.VideoCapture(0)
 print("Press 'q' to exit!")
@@ -27,13 +27,37 @@ while True:
     if result.multi_hand_landmarks:
         print(f"Hands Found: {len(result.multi_hand_landmarks)}")
         for hand_landmarks in result.multi_hand_landmarks:
-            mp_drawing.draw_landmarks(frame, hand_landmarks,mp_hands.HAND_CONNECTIONS)
 
             landmark_list=[]
             for lm in hand_landmarks.landmark:
                 px = int(lm.x * w)
                 py = int(lm.y * h)
                 landmark_list.append((px,py))
+
+            glow_layer = np.zeros_like(frame)
+
+            for connection in mp_hands.HAND_CONNECTIONS:
+                start_idx,end_idx = connection
+                start_point = landmark_list[start_idx]
+                end_point = landmark_list[end_idx]
+                cv2.line(glow_layer, start_point, end_point, (0,255,255),4)
+
+            for point in landmark_list:
+                cv2.circle(glow_layer,point, 8 ,(255,255,0),-1)
+
+            blurred_layer = cv2.GaussianBlur(glow_layer, (15,15),0)
+            cv2.imshow("Glow Layer Only", blurred_layer)
+
+            frame = cv2.add(frame, blurred_layer)
+
+            for connection in mp_hands.HAND_CONNECTIONS:
+                start_idx,end_idx = connection
+                start_point = landmark_list[start_idx]
+                end_point = landmark_list[end_idx]
+                cv2.line(frame, start_point, end_point, (0,255,255),2)
+
+            for point in landmark_list:
+                cv2.circle(frame, point, 5,(255,255,0),-1)
 
             wrist = landmark_list[0]
             middle_knuckle = landmark_list[9]
