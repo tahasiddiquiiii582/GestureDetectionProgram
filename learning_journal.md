@@ -992,4 +992,76 @@ visually similar at first glance, which led to a useful debugging discussion:
 
 ---
 
-## Day 10 — *(pending)*
+## Day 10 — Fine-Tuning Glow Color & Intensity
+
+### Concept learned
+`cv2.add()` (used in Day 9) adds brightness directly with no control over
+intensity, which can cause the glow to blow out into washed-out white patches
+since the source shapes are drawn at full brightness (255). `cv2.addWeighted()`
+solves this by giving each image a controllable multiplier before combining
+them, acting as an intensity dial rather than an all-or-nothing blend. Also
+learned a layered-glow technique: combining two different blur strengths (a
+tight bright inner glow + a soft wide outer halo) produces a richer effect
+than a single blur pass alone.
+
+### Key building blocks
+- `cv2.addWeighted(image1, alpha, image2, beta, gamma)` — blends two images
+  using this formula per pixel: `(image1 × alpha) + (image2 × beta) + gamma`
+  - `alpha` = how much of image1 to keep (kept at 1.0 — full camera frame)
+  - `beta` = how much of image2 (the glow) to let blend in — the actual
+    intensity control
+  - `gamma` = flat brightness offset, left at 0
+- Two-blur-layer technique: blur the same glow shape twice at different
+  kernel sizes, then combine both results into one layered glow before
+  blending onto the frame
+
+### Code — Day 10 (replacing Day 9's blend section)
+```python
+glow_layer = np.zeros_like(frame)
+
+for connection in mp_hands.HAND_CONNECTIONS:
+    start_idx, end_idx = connection
+    start_point = landmark_list[start_idx]
+    end_point = landmark_list[end_idx]
+    cv2.line(glow_layer, start_point, end_point, (0, 255, 255), 4)
+
+for point in landmark_list:
+    cv2.circle(glow_layer, point, 8, (255, 255, 0), -1)
+
+glow_small = cv2.GaussianBlur(glow_layer, (15, 15), 0)
+glow_large = cv2.GaussianBlur(glow_layer, (45, 45), 0)
+combined_glow = cv2.addWeighted(glow_small, 0.7, glow_large, 0.5, 0)
+
+frame = cv2.addWeighted(frame, 1.0, combined_glow, 0.6, 0)  # final chosen intensity
+
+for connection in mp_hands.HAND_CONNECTIONS:
+    start_idx, end_idx = connection
+    start_point = landmark_list[start_idx]
+    end_point = landmark_list[end_idx]
+    cv2.line(frame, start_point, end_point, (0, 255, 255), 2)
+
+for point in landmark_list:
+    cv2.circle(frame, point, 5, (255, 255, 0), -1)
+```
+
+### Practice tasks assigned
+1. Replace Day 9's `cv2.add()` blend with weighted, two-blur-layer blending
+2. Challenge: compare `beta` values 0.4 vs 1.2, then pick a final intensity
+
+### My completed task / code
+Reused the "view glow layer alone" debugging technique from Day 9 (applied
+independently, without being told to reuse it) to clearly compare kernel
+sizes/intensities against a plain black background. Test screenshots showed
+a clear, obvious difference this time — tighter/separated halos at lower
+settings vs. wider/merged halos at higher settings. Landed on **beta = 0.6**
+as the final chosen intensity — a balanced middle value giving visible glow
+without washing out into solid white.
+
+### Notes / things that tripped me up
+- None — correctly understood alpha/beta/gamma roles after a worked numeric
+  example, and successfully self-applied the prior day's debugging technique
+  without needing it re-suggested
+
+---
+
+## Day 11 — *(pending)*

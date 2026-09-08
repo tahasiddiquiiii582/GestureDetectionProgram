@@ -45,10 +45,13 @@ while True:
             for point in landmark_list:
                 cv2.circle(glow_layer,point, 8 ,(255,255,0),-1)
 
-            blurred_layer = cv2.GaussianBlur(glow_layer, (15,15),0)
-            cv2.imshow("Glow Layer Only", blurred_layer)
+            glow_small = cv2.GaussianBlur(glow_layer, (15,15),0)
+            glow_large = cv2.GaussianBlur(glow_layer,(45,45),0)
+            combined_glow = cv2.addWeighted(glow_small,0.8,glow_large,0.6,0)
 
-            frame = cv2.add(frame, blurred_layer)
+            cv2.imshow("Glow Layer Only", combined_glow)
+
+            frame = cv2.addWeighted(frame,1.0,combined_glow,0.6,0)
 
             for connection in mp_hands.HAND_CONNECTIONS:
                 start_idx,end_idx = connection
