@@ -1064,4 +1064,81 @@ without washing out into solid white.
 
 ---
 
-## Day 11 — *(pending)*
+## Day 11 — Testing with Two Hands + Measuring Performance
+
+### Concept learned
+A live tracking/drawing program needs to actually run fast enough to feel
+responsive, not just look correct in a screenshot. FPS (Frames Per Second)
+measures this: record the time before and after processing a frame, calculate
+how long it took, and `fps = 1 / time_taken`. Roughly 20-30+ FPS feels smooth
+for real-time interaction; under ~15 FPS starts to feel laggy.
+
+### Key building blocks
+- `time.time()` — returns the current clock time, used to measure elapsed
+  time between frames
+- `cv2.putText(image, text, position, font, font_scale, color, thickness)` —
+  draws text directly onto a frame; used here to show a live FPS counter
+- `cap.set(cv2.CAP_PROP_FRAME_WIDTH, value)` / `cap.set(cv2.CAP_PROP_FRAME_HEIGHT, value)`
+  — attempts to configure the webcam's capture resolution
+
+### Code — Day 11 (FPS measurement added)
+```python
+import time  # new import
+
+prev_frame_time = 0  # before the loop
+
+# ...inside the main loop, after all per-frame processing...
+current_frame_time = time.time()
+time_taken = current_frame_time - prev_frame_time
+fps = 1 / time_taken if time_taken > 0 else 0
+prev_frame_time = current_frame_time
+
+cv2.putText(frame, f"FPS: {int(fps)}", (10, 30),
+            cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
+```
+
+### Practice tasks assigned
+1. Add FPS measurement + on-screen display
+2. Test and compare FPS with one hand vs. two hands in frame
+3. Investigate if FPS is lower than expected, and why
+
+### My completed task / code
+Ran a full diagnostic investigation across multiple isolated tests:
+
+| Test | Result |
+|---|---|
+| One hand, full HUD (glow + prints) | ~9-12 FPS |
+| Two hands, full HUD | ~10-12 FPS (no meaningful difference vs. one hand) |
+| Prints disabled, glow enabled | ~9-12 FPS (no change — prints ruled out as a factor) |
+| Prints disabled, glow disabled | ~10-19 FPS (some improvement, but not dramatic) |
+| Prints disabled, glow enabled, lower camera resolution (480x360) | ~9-13 FPS (no meaningful improvement) |
+
+**Root cause identified:** MediaPipe's hand-detection neural network internally
+resizes input frames to its own fixed, small size before running inference,
+regardless of the camera's actual capture resolution. This means the
+computationally expensive part (running the detection model) costs roughly
+the same no matter what resolution the webcam captures at — so lowering
+resolution mostly reduces the cost of secondary operations (flip, color
+conversion, blur) rather than the real bottleneck.
+
+**Conclusion:** the bottleneck is genuinely the cost of running MediaPipe's
+two-hand detection model on CPU (no GPU acceleration) — a hardware/library
+limitation, not a bug in the code. 9-19 FPS is a realistic, expected range
+for this setup. Accepted this as the current baseline rather than continuing
+to chase further optimization at this stage, since it's sufficient for
+testing gesture/drawing logic going forward. Possible future options if
+performance ever becomes a practical blocker: reduce to 1-hand detection if a
+feature doesn't need two hands, or use GPU acceleration.
+
+### Notes / things that tripped me up
+- Initially assumed hand count and/or glow effect were the main performance
+  factors; testing disproved both as the *primary* cause, revealing a deeper
+  bottleneck (CPU-bound neural network inference) that isn't fixable through
+  simple code changes like resolution or print removal
+- Practiced the general engineering process of forming a hypothesis, testing
+  it in isolation, and updating the conclusion when the data didn't match
+  the initial assumption
+
+---
+
+## Day 12 — *(pending)*

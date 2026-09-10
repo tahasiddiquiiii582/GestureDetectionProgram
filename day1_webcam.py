@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import math
 import numpy as np
+import time
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
@@ -10,10 +11,15 @@ hands = mp_hands.Hands(
 )
 
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+
 print("Press 'q' to exit!")
 
 pinch_history = []
 buffer_size= 10
+prev_frame_time = 0
+
 while True:
     success, frame = cap.read()
     if not success:
@@ -49,7 +55,7 @@ while True:
             glow_large = cv2.GaussianBlur(glow_layer,(45,45),0)
             combined_glow = cv2.addWeighted(glow_small,0.8,glow_large,0.6,0)
 
-            cv2.imshow("Glow Layer Only", combined_glow)
+            
 
             frame = cv2.addWeighted(frame,1.0,combined_glow,0.6,0)
 
@@ -89,15 +95,24 @@ while True:
                 pinch_status = "Not Pinched"
 
         
-            print(f"pinch ratio : {pinch_ratio:.2f}---->{pinch_status}")
-            print(f"raw : {is_pinched_now} | smoothed: {pinch_status} | pinch history: {pinch_history}")
-            print(f"wrist at : {wrist}")
-            print(f"middle knuckle at : {middle_knuckle}")
-            print(f"index fingertip at : {index_tip}")
-            print(f"thumb fingertip at : {thumb_tip}")
-            print(f"palm size is : {palm_size}")
+            #print(f"pinch ratio : {pinch_ratio:.2f}---->{pinch_status}")
+            #print(f"raw : {is_pinched_now} | smoothed: {pinch_status} | pinch history: {pinch_history}")
+            #print(f"wrist at : {wrist}")
+            #print(f"middle knuckle at : {middle_knuckle}")
+            #print(f"index fingertip at : {index_tip}")
+            #print(f"thumb fingertip at : {thumb_tip}")
+            #print(f"palm size is : {palm_size}")
           
-    cv2.imshow("Day6-- Taha's Webcam Feed (The hard part test)", frame)
+
+    current_frame_time = time.time()
+    time_taken = current_frame_time - prev_frame_time
+    fps = 1/time_taken if time_taken>0 else 0
+    prev_frame_time = current_frame_time
+
+    cv2.putText(frame, f"FPS: {int(fps)}", (10,30), 
+                cv2.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 2)
+
+    cv2.imshow("Day11-- Taha's Webcam Feed (FPS test)", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
