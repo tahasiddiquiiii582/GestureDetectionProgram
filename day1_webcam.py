@@ -32,7 +32,8 @@ while True:
 
     if result.multi_hand_landmarks:
         print(f"Hands Found: {len(result.multi_hand_landmarks)}")
-        for hand_landmarks in result.multi_hand_landmarks:
+        for idx, hand_landmarks in enumerate(result.multi_hand_landmarks):
+            handedness = result.multi_handedness[idx].classification[0].label
 
             landmark_list=[]
             for lm in hand_landmarks.landmark:
@@ -73,6 +74,9 @@ while True:
             index_tip = landmark_list[8]
             thumb_tip = landmark_list[4]
 
+            cv2.putText(frame, handedness, (wrist[0] - 20, wrist[1] + 35),
+                            cv2.FONT_HERSHEY_COMPLEX, 0.9, (255,255,255),1)
+
             x1,y1 = wrist
             x2,y2 = middle_knuckle
             palm_size = math.sqrt((x2-x1)**2 + (y2-y1)**2)
@@ -112,6 +116,7 @@ while True:
     cv2.putText(frame, f"FPS: {int(fps)}", (10,30), 
                 cv2.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 2)
 
+    
     cv2.imshow("Day11-- Taha's Webcam Feed (FPS test)", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break

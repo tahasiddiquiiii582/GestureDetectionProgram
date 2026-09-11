@@ -1139,6 +1139,138 @@ feature doesn't need two hands, or use GPU acceleration.
   it in isolation, and updating the conclusion when the data didn't match
   the initial assumption
 
+### Hardware root cause (confirmed via DirectX Diagnostic Tool)
+Checked actual hardware: Dell Latitude 5310 2-in-1, Intel Core i7-10810U —
+a business ultrabook with **Intel integrated graphics only, no dedicated GPU**.
+
+**Final conclusion:** the 9-19 FPS ceiling isn't a coding mistake or a
+software configuration issue — it's a genuine hardware constraint. Dedicated
+GPUs are specifically built to handle the kind of heavy parallel math neural
+networks require; integrated graphics/CPU-only setups do the same job far
+less efficiently, since they're general-purpose hardware not optimized for
+this workload. GPU-accelerated MediaPipe would offer little to no benefit on
+this specific machine, since there's no real dedicated GPU to offload to in
+the first place.
+
+**Decision: accept current FPS as the realistic baseline** and proceed with
+the project as-is, rather than continuing to chase a hardware-limited
+performance ceiling. This FPS range is sufficient for reliable gesture
+detection and drawing, even if not premium-smooth.
+
 ---
 
-## Day 12 — *(pending)*
+## Day 12 — Week 2 Checkpoint: Handling Multiple Hands & Edge Cases
+
+### Concept learned
+`result.multi_hand_landmarks` (hand shapes) and `result.multi_handedness`
+(Left/Right labels) are two separate but matching lists — MediaPipe's model
+already determines left/right internally as part of its detection; the code's
+only job is correctly pairing the two lists together using a shared position
+index, since both lists are ordered the same way (one entry per detected
+hand). `enumerate()` provides that position index alongside each loop item,
+which is necessary here specifically to cross-reference between the two
+parallel lists.
+
+### Key building blocks
+- `enumerate(some_list)` — general Python tool that yields both the position
+  index and the item itself on each loop iteration, e.g.
+  `for idx, item in enumerate(my_list):`
+- `result.multi_handedness[idx].classification[0].label` — retrieves the
+  "Left"/"Right" text for the hand at matching position `idx`
+- Confirmed distinction: the *outer* lists (`multi_hand_landmarks`,
+  `multi_handedness`) have one entry per detected hand (0-2 hands); the 21
+  landmark points live one level deeper, *inside* each individual hand's
+  entry — these are two unrelated counts, not to be confused with each other
+
+### Code — Day 12 (handedness labeling added)
+```python
+if result.multi_hand_landmarks:
+    print(f"Hands Found: {len(result.multi_hand_landmarks)}")
+    for idx, hand_landmarks in enumerate(result.multi_hand_landmarks):
+        handedness = result.multi_handedness[idx].classification[0].label
+
+        landmark_list = []
+        for lm in hand_landmarks.landmark:
+            px = int(lm.x * w)
+            py = int(lm.y * h)
+            landmark_list.append((px, py))
+
+        # ... glow + skeleton drawing code (Day 8-10) stays the same ...
+
+        wrist = landmark_list[0]
+        # ... other key landmarks + pinch detection (Day 4-7) stays the same ...
+
+        # label placed INSIDE the loop, using this specific hand's data
+        cv2.putText(frame, handedness, (wrist[0] - 20, wrist[1] + 35),
+                    cv2.FONT_HERSHEY_COMPLEX, 0.9, (255, 255, 255), 1)
+```
+
+### Practice tasks assigned
+1. Add `enumerate()` + `multi_handedness` to label each hand "Left"/"Right"
+2. Test with one and two hands, confirm labels don't swap incorrectly
+3. Edge-case test: move hand fully out of frame and back repeatedly, confirm
+   no crash
+
+### My completed task / code
+Found and fixed a real placement bug independently: the `cv2.putText()` label
+call was initially written *outside* the per-hand loop (same indentation as
+the FPS display code), which would have caused two problems — only ever
+showing one label with two hands present (using leftover data from
+whichever hand was processed last in the loop), and a potential
+`NameError` crash if no hand had been detected yet when the line first ran.
+Moved the line inside the loop, correctly placing it after `wrist` is
+calculated for each hand.
+
+Final test confirmed: both "Left"/"Right" labels display correctly and
+independently per hand, no crashes during rapid hand-in/hand-out testing.
+Also observed FPS this session ranging 15-20 (up from Day 11's 9-13) —
+consistent with expected natural variance in CPU-bound performance between
+sessions, not a contradiction of the Day 11 hardware conclusion.
+
+### Notes / things that tripped me up
+- Correctly diagnosed why code sitting outside a loop only reflects the
+  *last* iteration's data — an important general debugging pattern for
+  anything using loop variables afterward
+
+---
+
+## Week 2 Checkpoint — Complete ✅
+By the end of Day 12, the custom HUD:
+- Fully replaces MediaPipe's default drawing with a hand-coded neon skeleton
+  (Day 8), glow effect (Day 9), and tuned intensity (Day 10)
+- Correctly tracks and labels up to two hands simultaneously by left/right
+  (Day 12)
+- Runs at a known, explained, hardware-limited frame rate (~9-20 FPS,
+  fluctuating; confirmed as a CPU/no-dedicated-GPU constraint, not a bug —
+  Day 11)
+- Handles hands entering/leaving frame without crashing, thanks to the
+  `None`-check pattern established back in Day 3
+
+### Note on day-numbering vs. the original 30-day roadmap
+The original roadmap planned Week 2 across Days 8-14 (7 days), with nodes and
+connections as separate steps (Day 9 and Day 10 respectively). In practice,
+Day 8 here combined "turn off default drawing" + "draw nodes" + "draw
+connections" into a single lesson, since they're tightly related steps that
+flow naturally together. This compressed the week into 5 days instead of 7:
+
+| Original roadmap day | Content | Actual day covered |
+|---|---|---|
+| Day 8 | Turn off default drawing | Day 8 |
+| Day 9 | Draw own nodes | Day 8 (combined) |
+| Day 10 | Draw own connections | Day 8 (combined) |
+| Day 11 | Add glow effect | Day 9 |
+| Day 12 | Fine-tune glow color/intensity | Day 10 |
+| Day 13 | Test both hands + FPS | Day 11 |
+| Day 14 | Checkpoint | Day 12 (+ bonus handedness labeling) |
+
+**Nothing from the original Week 2 plan was skipped** — all content is
+covered, just reached 2 days ahead of the original pace due to this
+combination. Continuing with sequential day numbering (Day 13 next) rather
+than renumbering to match the original plan exactly.
+
+Ready to move into Week 3: building the actual pinch-to-draw functionality —
+turning fingertip movement into a fading trail on screen.
+
+---
+
+## Day 13 — *(pending)*
