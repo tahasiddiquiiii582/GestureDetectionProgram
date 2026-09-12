@@ -19,6 +19,8 @@ print("Press 'q' to exit!")
 pinch_history = []
 buffer_size= 10
 prev_frame_time = 0
+was_pinched= False
+drawing_strokes = []
 
 while True:
     success, frame = cap.read()
@@ -97,6 +99,18 @@ while True:
                 pinch_status = "Pinched"
             else:
                 pinch_status = "Not Pinched"
+
+            if pinch_status =="Pinched" and not was_pinched:
+                drawing_strokes.append([])
+            if pinch_status == "Pinched":
+                midpoint_x = (x3 + x4)//2
+                midpoint_y = (y3 + y4)//2
+                drawing_strokes[-1].append((midpoint_x,midpoint_y))
+            was_pinched = (pinch_status == "Pinched")
+
+            if len(drawing_strokes)>0:
+                print(f"total storkes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
+
 
         
             #print(f"pinch ratio : {pinch_ratio:.2f}---->{pinch_status}")

@@ -1273,4 +1273,86 @@ turning fingertip movement into a fading trail on screen.
 
 ---
 
-## Day 13 — *(pending)*
+## Day 13 — Recording the Drawing Trail (Pinch = Pen Down)
+
+### Concept learned
+Recording a drawing trail requires more than just appending every pinched
+point to one flat list — releasing and re-pinching in a different location
+needs to start a completely new, disconnected stroke, not one continuous
+line joining unrelated strokes together. Solved using a **nested list**
+(a list of strokes, where each stroke is itself a list of points), combined
+with detecting the exact frame a pinch *begins* by comparing the current
+frame's pinch status against a remembered previous-frame status.
+
+### Key building blocks
+- Nested lists: `drawing_strokes = []`, where each item is itself a list of
+  points, e.g. `[[point1, point2], [point3, point4, point5]]`
+- `drawing_strokes[-1]` — negative indexing shortcut for "the last item in
+  the list," used to always add to whichever stroke is currently active
+- Transition detection: `if pinch_status == "Pinched" and not was_pinched:`
+  — combining "is it true now" AND "was it NOT true before" to catch the
+  exact single frame a pinch begins, not every frame while held
+- `was_pinched = (pinch_status == "Pinched")` — must run **unconditionally**
+  every frame (not inside any `if` block), since it's bookkeeping that has
+  to reflect the true current state regardless of what happened, not a
+  reaction to a specific condition. If only updated during "Pinched" frames,
+  it would go stale and never correctly detect a second pinch after a release.
+
+### Code — Day 13 (added to the ongoing project file)
+```python
+# added near other setup variables, before the main loop:
+drawing_strokes = []
+was_pinched = False
+
+# added inside the loop, after pinch_status is calculated:
+if pinch_status == "Pinched" and not was_pinched:
+    drawing_strokes.append([])
+
+if pinch_status == "Pinched":
+    midpoint_x = (x3 + x4) // 2
+    midpoint_y = (y3 + y4) // 2
+    drawing_strokes[-1].append((midpoint_x, midpoint_y))
+
+was_pinched = (pinch_status == "Pinched")
+
+# temporary test print, guarded against empty list on startup:
+if len(drawing_strokes) > 0:
+    print(f"total strokes {len(drawing_strokes)} | length of current stroke {len(drawing_strokes[-1])}")
+```
+
+### Practice tasks assigned
+1. Add stroke-recording logic with correct pen-up/pen-down behavior
+2. Test with a temporary print, confirming stroke count increases on new
+   pinches and point count grows while holding
+
+### My completed task / code
+Hit and self-diagnosed an `IndexError: list index out of range` on first run
+— caused by checking `drawing_strokes[-1]` before any stroke existed yet
+(empty list at startup, before the first pinch). Fixed by guarding the print
+with `if len(drawing_strokes) > 0:`. Final test log confirmed correct
+behavior across 5 separate pinch-release cycles: stroke length climbing
+smoothly while held (e.g. 1→50), then correctly starting fresh at length 1
+on the next pinch rather than continuing the previous stroke.
+
+### Notes / things that tripped me up
+- Needed extended discussion to understand why `was_pinched` must update
+  unconditionally every frame rather than only inside the "Pinched" branch —
+  clarified via a light-switch analogy: memory of "was it on a moment ago"
+  goes stale and gives wrong answers later if not updated every single time,
+  regardless of the current state
+- Understood `not was_pinched` as simply flipping True/False, and the
+  combined `and` condition as requiring both "true now" and "false before"
+  to isolate the exact transition frame
+- Encountered and correctly reasoned about `drawing_strokes[-1]` (negative
+  indexing) for the first time
+- Observed occasional brief `Hands Found: 2` entries in the test log despite
+  only ever having one hand in frame — identified as a likely false-positive
+  detection from MediaPipe itself (background object, shadow, or partial
+  arm/sleeve motion briefly resembling a second hand), not a bug in the
+  stroke-recording logic. Not addressed now since it didn't disrupt this
+  test, but worth revisiting in Week 4 polish if it ever causes a visible
+  drawing glitch (e.g. a phantom stroke starting mid-pinch).
+
+---
+
+## Day 14 — *(pending)*
