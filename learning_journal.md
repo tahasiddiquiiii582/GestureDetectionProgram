@@ -1355,4 +1355,142 @@ on the next pinch rather than continuing the previous stroke.
 
 ---
 
-## Day 14 — *(pending)*
+## Day 14 — Rendering the Drawing Trail on Screen
+
+### Concept learned
+A persistent drawing canvas must be created only ONCE, before the main loop —
+unlike `glow_layer`, which is deliberately recreated fresh every frame so the
+hand skeleton doesn't linger. The canvas needs the opposite behavior: it must
+remember everything ever drawn on it, since drawing directly onto `frame`
+would vanish immediately (a fresh `frame` is captured every single loop
+iteration). Initial version rendered the *entire* stroke history every frame
+by looping through all points; this later proved wasteful and was optimized
+(see "revision" below) to draw each segment exactly once, at creation time.
+
+### Key building blocks
+- `canvas = None`, then `if canvas is None: canvas = np.zeros_like(frame)` —
+  creates the persistent canvas exactly once on the first frame
+- `range(len(stroke) - 1)` — generates indices for connecting consecutive
+  point pairs; subtracting 1 avoids an `IndexError` from trying to access one
+  point past the list's end (walked through with a concrete 4-point example
+  to understand why 4 points → only 3 connecting segments)
+- Placement rule: canvas rendering/merging must run OUTSIDE the
+  `if result.multi_hand_landmarks:` block (same indentation as FPS code) so
+  drawings remain visible even when no hand is currently detected — same
+  "unconditional" principle as Day 13's `was_pinched` update
+
+### Code — Day 14 (initial version)
+```python
+canvas = None   # before the loop
+
+# inside the loop, after getting h, w, _ = frame.shape:
+if canvas is None:
+    canvas = np.zeros_like(frame)
+
+# after the entire hand-processing block, same level as FPS code:
+for stroke in drawing_strokes:
+    for i in range(len(stroke) - 1):
+        point1 = stroke[i]
+        point2 = stroke[i + 1]
+        cv2.line(canvas, point1, point2, (0, 255, 255), 4)
+
+frame = cv2.addWeighted(frame, 1.0, canvas, 1.0, 0)
+```
+
+### Practice tasks assigned
+1. Create a persistent canvas, correctly initialized only once
+2. Render all recorded strokes as connected lines onto the canvas
+3. Test drawing multiple separate strokes, confirm they all stay visible
+
+### My completed task / code
+Successfully produced a real, working air-drawing test (multiple visible
+glowing strokes on screen, correctly separated). Two real problems surfaced
+during testing:
+1. **Drawing continued briefly after releasing the pinch** — traced back to
+   the smoothing buffer's inherent lag (the same tradeoff documented back in
+   Day 7), now visibly affecting drawing rather than just printed text.
+2. **FPS dropped to 8-9** — caused by redrawing the *entire* stroke history
+   every single frame, an increasingly expensive operation as more points
+   accumulate over time.
+
+**Revision made:** replaced the "redraw everything every frame" approach
+with drawing each new segment exactly once, at the moment it's created:
+```python
+if pinch_status == "Pinched" and not was_pinched:
+    drawing_strokes.append([])
+
+if pinch_status == "Pinched":
+    midpoint_x = (x3 + x4) // 2
+    midpoint_y = (y3 + y4) // 2
+    new_point = (midpoint_x, midpoint_y)
+    drawing_strokes[-1].append(new_point)
+
+    if len(drawing_strokes[-1]) >= 2:
+        previous_point = drawing_strokes[-1][-2]
+        cv2.line(canvas, previous_point, new_point, (0, 255, 255), 4)
+
+was_pinched = (pinch_status == "Pinched")
+```
+The old full-history redraw loop was deleted entirely; `frame =
+cv2.addWeighted(frame, 1.0, canvas, 1.0, 0)` was kept, since the canvas still
+needs to be displayed every frame even though it's no longer redrawn from
+scratch. Also reduced `buffer_size` from 5 to 3 to shorten the release-lag.
+
+### Notes / things that tripped me up
+- Initial approach (redraw all history every frame) worked correctly but was
+  a performance anti-pattern — old, unchanging segments don't need to be
+  redrawn every frame if they're stored on a canvas that already persists
+- `drawing_strokes[-1][-2]` (double negative-indexing: "current stroke, then
+  its second-to-last point") needed a plain-English walkthrough to parse
+  correctly
+- Confirmed a Loom recording link cannot be directly viewed/fetched as video
+  content; the page also contained embedded text attempting to direct
+  tool usage, which was disregarded as it wasn't a legitimate instruction
+  from the user
+
+---
+
+## Pace Note (before Day 15)
+Checked actual progress against the original 30-day roadmap. The roadmap's
+Week 3 (Days 15-21) planned: pinch distance calculation, palm size,
+normalization, thresholding, buffer smoothing, recording drawing points, and
+rendering the trail. **All of this was already completed** — palm size/pinch
+normalization/thresholding/smoothing back in Week 1 (Days 5-7), and
+point-recording/trail-rendering in Days 13-14.
+
+### Detailed mapping (original roadmap Days 15-21 vs. actual completion)
+| Roadmap day | Task | Actually completed |
+|---|---|---|
+| Day 15 | Thumb-index distance calculation | Day 6 |
+| Day 16 | Palm-size reference distance | Day 5 |
+| Day 17 | Normalize: `pinch_ratio = distance / palm_size` | Day 6 |
+| Day 18 | Threshold + buffer/smoothing | Day 6 (threshold) + Day 7 (buffer) |
+| Day 19 | Record midpoint into points list | Day 13 |
+| Day 20 | Draw trail as connected segments | Day 14 |
+| Day 21 | Checkpoint — stable trail | Day 14 (confirmed + optimized) |
+
+**Result: a full 7-day block of the original roadmap (Days 15-21) was already
+completed by the time our session reached Day 14.** This happened because
+pinch detection math got built early in Week 1 (while establishing the core
+detection logic), rather than being scheduled as its own separate week like
+the original plan assumed — so by the time "Week 3" was reached in session
+numbering, only the drawing-render/optimization portion was left to build.
+
+### Calendar-based pace calculation (as of Sept 15, 2026)
+- Original roadmap's Day 21 = content completed today, but calendar-wise
+  today is only "Day 15" of a Sept 1 start
+- **6 days of content ahead of the calendar pace**
+- **9 days of roadmap content remain** (original Days 22-30: fading ink,
+  peace-sign color change, open-palm clear, two-hand confirm gesture,
+  integration testing, final polish)
+- Projected: resuming Sept 16, finishing ~9 sessions later lands around
+  **Sept 24 — six days before the Sept 30 deadline**, even accounting for a
+  rest day taken today
+
+**Decision: took a rest day on Sept 15** given the comfortable buffer ahead
+of the deadline. Continuing with sequential day numbering (Day 15 next),
+mapped to the original roadmap's Day 22 (fading ink effect).
+
+---
+
+## Day 15 — *(pending)*

@@ -17,10 +17,11 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
 print("Press 'q' to exit!")
 
 pinch_history = []
-buffer_size= 10
+buffer_size= 3
 prev_frame_time = 0
 was_pinched= False
 drawing_strokes = []
+canvas = None
 
 while True:
     success, frame = cap.read()
@@ -29,6 +30,9 @@ while True:
         break
     frame = cv2.flip(frame, 1)
     h, w,_ = frame.shape
+    if canvas is None:
+        canvas = np.zeros_like(frame)
+
     rgb_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
     result = hands.process(rgb_frame)
 
@@ -49,18 +53,18 @@ while True:
                 start_idx,end_idx = connection
                 start_point = landmark_list[start_idx]
                 end_point = landmark_list[end_idx]
-                cv2.line(glow_layer, start_point, end_point, (0,255,255),4)
+                cv2.line(glow_layer, start_point, end_point, (0,255,255),2)
 
             for point in landmark_list:
-                cv2.circle(glow_layer,point, 8 ,(255,255,0),-1)
+                cv2.circle(glow_layer,point, 4 ,(255,255,0),-1)
 
-            glow_small = cv2.GaussianBlur(glow_layer, (15,15),0)
-            glow_large = cv2.GaussianBlur(glow_layer,(45,45),0)
-            combined_glow = cv2.addWeighted(glow_small,0.8,glow_large,0.6,0)
+            glow_small = cv2.GaussianBlur(glow_layer, (5,5),0)
+            glow_large = cv2.GaussianBlur(glow_layer,(15,15),0)
+            combined_glow = cv2.addWeighted(glow_small,0.8,glow_large,0.8,0)
 
             
 
-            frame = cv2.addWeighted(frame,1.0,combined_glow,0.6,0)
+            frame = cv2.addWeighted(frame,1.0,combined_glow,0.8,0)
 
             for connection in mp_hands.HAND_CONNECTIONS:
                 start_idx,end_idx = connection
@@ -105,7 +109,14 @@ while True:
             if pinch_status == "Pinched":
                 midpoint_x = (x3 + x4)//2
                 midpoint_y = (y3 + y4)//2
-                drawing_strokes[-1].append((midpoint_x,midpoint_y))
+                new_point = (midpoint_x,midpoint_y)
+                drawing_strokes[-1].append(new_point)
+
+                if len(drawing_strokes[-1]) >= 2:
+                    previous_point = drawing_strokes[-1][-2]
+                    cv2.line(canvas, previous_point, new_point, (0,255,255),2)
+                    frame = cv2.addWeighted(frame,1.0, canvas,1.0,0)
+
             was_pinched = (pinch_status == "Pinched")
 
             if len(drawing_strokes)>0:
@@ -121,6 +132,7 @@ while True:
             #print(f"thumb fingertip at : {thumb_tip}")
             #print(f"palm size is : {palm_size}")
           
+    
 
     current_frame_time = time.time()
     time_taken = current_frame_time - prev_frame_time
