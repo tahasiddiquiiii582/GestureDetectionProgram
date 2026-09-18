@@ -1493,4 +1493,148 @@ mapped to the original roadmap's Day 22 (fading ink effect).
 
 ---
 
-## Day 15 — *(pending)*
+## Day 15 (Roadmap Day 22) — Fading Ink Effect
+
+### Concept learned
+Persistent, permanent line segments (Day 14) needed to become temporary,
+fading ones to match the boss's exact spec ("ink slowly fades out instead of
+vanishing instantly"). This required a shift back from Day 14's optimization
+(draw once, never redraw): a fading segment's appearance genuinely changes
+every frame, so the canvas must be cleared and redrawn fresh each frame,
+recalculating each segment's current brightness based on its age. Segments
+past their lifespan are dropped from the list entirely — that's the actual
+disappearance mechanism.
+
+### Key building blocks
+- Segments stored as flat tuples `(point1, point2, birth_time)` in a list,
+  rather than nested strokes — simpler when each segment needs its own
+  independent age calculation regardless of which stroke it came from
+- `age = current_time - birth_time` — elapsed seconds since creation
+- `opacity = 1.0 - (age / segment_lifetime)` — linear fade from 1.0 (new) to
+  0.0 (expired)
+- Scaling color brightness by opacity (`int(255 * opacity)`) to visually
+  simulate fading, rather than true alpha transparency
+- Rebuilding the segments list each frame (`still_alive_segments`), keeping
+  only non-expired entries — the actual removal mechanism for old ink
+- Placement: this whole block must sit OUTSIDE the hand-detection `if`
+  block, same reasoning as Day 14 — fading must continue even if no hand is
+  currently visible, since it depends on elapsed time, not hand presence
+
+### Code — Day 15
+```python
+# setup, before the loop:
+drawing_segments = []   # each item: (point1, point2, birth_time)
+segment_lifetime = 3.0  # seconds until fully faded
+
+# inside the loop, when recording a pinch point:
+if len(drawing_strokes[-1]) >= 2:
+    previous_point = drawing_strokes[-1][-2]
+    birth_time = time.time()
+    drawing_segments.append((previous_point, new_point, birth_time))
+
+# outside the hand-detection block, every frame:
+canvas = np.zeros_like(frame)
+current_time = time.time()
+still_alive_segments = []
+
+for point1, point2, birth_time in drawing_segments:
+    age = current_time - birth_time
+    if age < segment_lifetime:
+        opacity = 1.0 - (age / segment_lifetime)
+        color = (0, int(255 * opacity), int(255 * opacity))
+        cv2.line(canvas, point1, point2, color, 4)
+        still_alive_segments.append((point1, point2, birth_time))
+
+drawing_segments = still_alive_segments
+frame = cv2.addWeighted(frame, 1.0, canvas, 1.0, 0)
+```
+
+### Practice tasks assigned
+1. Replace permanent segment storage/rendering with age-tracked fading logic
+2. Test that ink visibly fades and disappears after ~3 seconds
+3. Challenge: compare `segment_lifetime` of 1.0 vs 6.0
+
+### My completed task / code
+Implemented and confirmed working — ink fades smoothly and disappears after
+the set lifetime, matching the reference video's spec exactly.
+
+### Notes / things that tripped me up
+- Needed a clear walkthrough of exact code placement (outside the
+  hand-detection block, replacing the old Day 14 rendering section
+  entirely rather than running both side by side)
+
+---
+
+## Day 16 (Roadmap Day 23) — Peace Sign Detection → Change Ink Color
+
+### Concept learned
+Finger up/down detection works by comparing a fingertip's y-coordinate to a
+knuckle further down the same finger — since smaller y means higher on
+screen, a fingertip with a smaller y than its reference knuckle means that
+finger is extended upward. Applying this check to 4 fingers (excluding thumb,
+which moves sideways rather than up/down) produces a True/False pattern that
+can be matched against known gesture shapes, like a peace sign.
+
+### Key building blocks
+- `zip(list1, list2)` — walks through two lists simultaneously, pairing up
+  matching positions (e.g. `zip([8,12,16,20], [6,10,14,18])` produces pairs
+  like `(8,6)`, `(12,10)`, etc.) — cleaner than manual indexing when
+  processing two related lists together, position by position
+- Comparing two lists with `==` (e.g. `fingers == [True, True, False, False]`)
+  checks that every position matches, in order — used to detect an exact
+  gesture pattern
+- Modulo (`%`) for cycling: `(current_index + 1) % len(list)` wraps back to
+  index 0 once past the last index, instead of going out of range
+- Same transition-detection pattern from Day 13 (`is_X and not was_X`)
+  reused for detecting the moment a peace sign is first made, not every
+  frame it's held
+
+### Code — Day 16
+```python
+def fingers_up(landmark_list):
+    fingers = []
+    finger_tips = [8, 12, 16, 20]
+    finger_knuckles = [6, 10, 14, 18]
+
+    for tip_idx, knuckle_idx in zip(finger_tips, finger_knuckles):
+        tip_y = landmark_list[tip_idx][1]
+        knuckle_y = landmark_list[knuckle_idx][1]
+        fingers.append(tip_y < knuckle_y)
+
+    return fingers
+
+# setup, before the loop:
+ink_colors = [(0, 255, 255), (255, 0, 255), (0, 255, 0), (255, 255, 0)]
+current_color_index = 0
+was_peace_sign = False
+
+# inside the loop, after landmark_list is built:
+fingers = fingers_up(landmark_list)
+is_peace_sign = fingers == [True, True, False, False]
+
+if is_peace_sign and not was_peace_sign:
+    current_color_index = (current_color_index + 1) % len(ink_colors)
+
+was_peace_sign = is_peace_sign
+
+# when drawing segments, using the current color scaled by fade opacity:
+base_color = ink_colors[current_color_index]
+color = tuple(int(c * opacity) for c in base_color)
+```
+
+### Practice tasks assigned
+1. Build `fingers_up()` to detect 4-finger extension state
+2. Detect peace sign pattern, cycle ink color on each new peace sign
+3. Apply the current color (scaled by fade opacity) to drawn segments
+
+### My completed task / code
+Confirmed working correctly on first implementation — peace sign reliably
+triggers a color change on the next stroke, cycling through all 4 defined
+colors correctly using the modulo wrap-around.
+
+### Notes / things that tripped me up
+- None reported — smooth implementation
+
+---
+
+## Day 17 — *(pending)*

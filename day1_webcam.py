@@ -21,7 +21,29 @@ buffer_size= 3
 prev_frame_time = 0
 was_pinched= False
 drawing_strokes = []
-canvas = None
+drawing_segments = []
+segment_lifetime = 10.0
+
+#=======================================================================================================================================
+def fingers_up(landmark_list):
+    fingers = []
+    finger_tips = [8,12,16,20]
+    finger_knuckles = [6,10,14,18]
+
+    for tip_idx, knuckle_idx in zip(finger_tips,finger_knuckles):
+        tip_y = landmark_list[tip_idx][1]
+        knuckle_y = landmark_list[knuckle_idx][1]
+
+        if tip_y < knuckle_y:
+            fingers.append(True)
+        else:
+            fingers.append(False)
+    return fingers
+
+ink_colors = [(0, 255, 255), (255, 0, 255), (0, 255, 0), (255, 255, 0)]  # yellow, magenta, green, cyan
+current_color_index = 0
+was_peace_sign = False
+#=======================================================================================================================================
 
 while True:
     success, frame = cap.read()
@@ -30,8 +52,6 @@ while True:
         break
     frame = cv2.flip(frame, 1)
     h, w,_ = frame.shape
-    if canvas is None:
-        canvas = np.zeros_like(frame)
 
     rgb_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
     result = hands.process(rgb_frame)
@@ -46,6 +66,14 @@ while True:
                 px = int(lm.x * w)
                 py = int(lm.y * h)
                 landmark_list.append((px,py))
+
+            fingers = fingers_up(landmark_list)
+            # fingers = [index, middle, ring, pinky] as True/False
+            is_peace_sign = fingers == [True,True,False,False]
+
+            if is_peace_sign and not was_peace_sign:
+                current_color_index = (current_color_index+1) % len(ink_colors)
+            was_peace_sign = is_peace_sign
 
             glow_layer = np.zeros_like(frame)
 
@@ -114,13 +142,13 @@ while True:
 
                 if len(drawing_strokes[-1]) >= 2:
                     previous_point = drawing_strokes[-1][-2]
-                    cv2.line(canvas, previous_point, new_point, (0,255,255),2)
-                    frame = cv2.addWeighted(frame,1.0, canvas,1.0,0)
+                    birth_time = time.time()
+                    drawing_segments.append((previous_point, new_point, birth_time))
 
             was_pinched = (pinch_status == "Pinched")
 
             if len(drawing_strokes)>0:
-                print(f"total storkes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
+                print(f"total strokes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
 
 
         
@@ -132,7 +160,20 @@ while True:
             #print(f"thumb fingertip at : {thumb_tip}")
             #print(f"palm size is : {palm_size}")
           
-    
+    canvas = np.zeros_like(frame)
+    current_time = time.time()
+    still_alive_segments = []
+
+    for point1,point2, birth_time in drawing_segments:
+        age = current_time-birth_time
+        if age < segment_lifetime:
+            opacity = 1.0 - (age/segment_lifetime)
+            base_color = ink_colors[current_color_index]
+            color = tuple(int(c * opacity) for c in base_color)
+            cv2.line(canvas, point1, point2, color, 3)
+            still_alive_segments.append((point1, point2, birth_time))
+    drawing_segments = still_alive_segments
+    frame = cv2.addWeighted(frame, 1.0, canvas,1.0,0)    
 
     current_frame_time = time.time()
     time_taken = current_frame_time - prev_frame_time
