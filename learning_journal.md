@@ -1637,4 +1637,159 @@ colors correctly using the modulo wrap-around.
 
 ---
 
-## Day 17 — *(pending)*
+## Day 17 (Roadmap Day 24) — Open Palm Detection → Clear Canvas
+
+### Concept learned
+Open palm detection reuses `fingers_up()` from Day 16 with a different
+target pattern (`[True, True, True, True]` instead of the peace sign's
+pattern). Clearing the canvas is simple once drawing is stored as data
+(`drawing_segments`, `drawing_strokes`) rather than permanent pixels —
+"clearing" just means emptying those lists, and since the canvas already
+redraws fresh from that data every frame (Day 15's fading logic), an empty
+list naturally means nothing gets drawn — no separate erase operation needed.
+
+### Code — Day 17
+```python
+was_open_palm = False
+
+is_open_palm = fingers == [True, True, True, True]
+
+if is_open_palm and not was_open_palm:
+    drawing_segments = []
+    drawing_strokes = []
+
+was_open_palm = is_open_palm
+```
+
+### Practice tasks assigned
+1. Detect open palm using `fingers_up()`
+2. Clear both drawing lists on gesture transition
+3. Test that clearing doesn't wipe out an immediately-following new stroke
+
+### My completed task / code
+Initial implementation surfaced two real bugs during testing, both properly
+diagnosed and fixed (see full debugging arc in the "Bonus" section below):
+1. `IndexError` when pinch-drawing continued into an open-palm clear
+   mid-stroke, due to `was_pinched` staying stale from the pinch smoothing
+   buffer's inherent lag
+2. Open-palm clearing firing unintentionally during normal pinching/peace-sign
+   gestures, due to natural hand tilt occasionally misreading all 4 fingers
+   as extended
+
+### Notes / things that tripped me up
+- See the Day 18 bonus lesson below — this day's bugs directly motivated
+  that lesson
+
+---
+
+## Day 18 (Bonus — not in original roadmap) — Gesture Stability Buffer
+
+### Why this lesson exists
+Not part of the original 30-day roadmap (which only specifies a buffer for
+pinch detection specifically, via Day 18's hysteresis mention). This lesson
+was created in direct response to two real bugs discovered while testing
+Day 17's open-palm clear:
+
+**Bug 1 — stale `was_pinched` crash:**
+```
+IndexError: list index out of range
+```
+Root cause: mid-pinch, an accidental open-palm misdetection (due to hand
+tilt) cleared `drawing_strokes` while `pinch_status` was still reporting
+"Pinched" (due to Day 7's smoothing buffer lag) and `was_pinched` was still
+`True` from before. The code's transition check (`pinch_status == "Pinched"
+and not was_pinched`) evaluated False (so no new stroke was created), but the
+very next line still tried to append into the now-empty list — crash.
+**Fix:** added a defensive check right before the risky operation —
+`if len(drawing_strokes) == 0: drawing_strokes.append([])` — verifying the
+actual current state of the data being used, rather than fully trusting a
+memory variable (`was_pinched`) that another feature could silently
+invalidate. General lesson: when two independent features touch the same
+shared data, memory variables can go stale from one feature's perspective
+due to changes made by a completely different feature.
+
+**Bug 2 — false-positive gesture triggers from hand tilt:**
+Natural hand tilt while pinching or forming a peace sign occasionally caused
+`fingers_up()` to briefly misread all 4 fingers as extended, matching the
+open-palm pattern and firing an unwanted clear — even mid-drawing or
+mid-peace-sign. A first attempted fix (`is_open_palm = fingers == [...] and
+pinch_status != "Pinched"`) only protected against misfires during pinching,
+not during peace-sign attempts, since `pinch_status` is "Not Pinched" during
+those too — an incomplete fix that didn't address the actual root cause.
+
+### Concept learned
+A single frame's gesture reading should never be trusted for a consequential
+action (like clearing an entire canvas) — the same principle behind Day 7's
+pinch smoothing, applied here via a different, equally valid technique: a
+**consecutive-frame counter** instead of a rolling-history majority vote.
+The counter increments every frame the gesture holds true, resets to zero
+the instant it's false, and the action only fires once the counter reaches
+an exact required value — filtering out brief, jittery misreadings while
+still responding quickly to genuinely held gestures.
+
+### Key building blocks
+- Consecutive counter pattern:
+  ```python
+  if is_gesture:
+      counter += 1
+  else:
+      counter = 0
+  ```
+- Triggering on `== REQUIRED_FRAMES` rather than `>= REQUIRED_FRAMES` — using
+  `>=` would fire the action repeatedly every frame for as long as the
+  gesture is held past the threshold; `==` matches exactly once, the specific
+  frame the counter first reaches the target value
+
+### Code — Day 18
+```python
+# setup, before the loop:
+open_palm_counter = 0
+peace_sign_counter = 0
+REQUIRED_FRAMES = 5
+
+# inside the loop, after is_open_palm / is_peace_sign are calculated:
+if is_open_palm:
+    open_palm_counter += 1
+else:
+    open_palm_counter = 0
+
+if is_peace_sign:
+    peace_sign_counter += 1
+else:
+    peace_sign_counter = 0
+
+if open_palm_counter == REQUIRED_FRAMES:
+    drawing_segments = []
+    drawing_strokes = []
+
+if peace_sign_counter == REQUIRED_FRAMES:
+    current_color_index = (current_color_index + 1) % len(ink_colors)
+```
+The old `was_open_palm` / `was_peace_sign` transition-tracking was removed
+entirely for these two gestures, replaced by the counter approach. Pinch's
+Day 7 rolling-buffer smoothing was left untouched.
+
+### Practice tasks assigned
+1. Replace open-palm and peace-sign transition detection with consecutive
+   frame counters
+2. Re-test the original bug scenarios (pinch-drawing + accidental clear,
+   peace-sign + accidental clear)
+3. Challenge: compare `REQUIRED_FRAMES = 10` vs `3`
+
+### My completed task / code
+Confirmed working correctly — canvas no longer clears unexpectedly during
+pinch-drawing or peace-sign gestures; genuine, deliberately-held gestures
+still trigger reliably.
+
+### Notes / things that tripped me up
+- Correctly identified that an initial partial fix
+  (`pinch_status != "Pinched"` guard) only solved half the problem, since it
+  didn't account for the peace-sign scenario — good instinct to question
+  whether a fix was actually complete rather than assuming it was
+- Recognized the parallel between this technique and Day 7's buffer, while
+  understanding they're two different valid implementations of the same
+  underlying "don't trust one frame" principle
+
+---
+
+## Day 19 — *(pending)*

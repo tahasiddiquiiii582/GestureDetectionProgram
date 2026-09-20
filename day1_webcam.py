@@ -42,7 +42,12 @@ def fingers_up(landmark_list):
 
 ink_colors = [(0, 255, 255), (255, 0, 255), (0, 255, 0), (255, 255, 0)]  # yellow, magenta, green, cyan
 current_color_index = 0
-was_peace_sign = False
+#was_peace_sign = False
+#was_open_palm = False
+
+open_palm_counter = 0
+peace_sign_counter = 0
+required_frames = 5
 #=======================================================================================================================================
 
 while True:
@@ -66,14 +71,6 @@ while True:
                 px = int(lm.x * w)
                 py = int(lm.y * h)
                 landmark_list.append((px,py))
-
-            fingers = fingers_up(landmark_list)
-            # fingers = [index, middle, ring, pinky] as True/False
-            is_peace_sign = fingers == [True,True,False,False]
-
-            if is_peace_sign and not was_peace_sign:
-                current_color_index = (current_color_index+1) % len(ink_colors)
-            was_peace_sign = is_peace_sign
 
             glow_layer = np.zeros_like(frame)
 
@@ -135,6 +132,9 @@ while True:
             if pinch_status =="Pinched" and not was_pinched:
                 drawing_strokes.append([])
             if pinch_status == "Pinched":
+                if len(drawing_strokes) == 0:
+                    drawing_strokes.append([])
+
                 midpoint_x = (x3 + x4)//2
                 midpoint_y = (y3 + y4)//2
                 new_point = (midpoint_x,midpoint_y)
@@ -146,7 +146,29 @@ while True:
                     drawing_segments.append((previous_point, new_point, birth_time))
 
             was_pinched = (pinch_status == "Pinched")
+            
+            fingers = fingers_up(landmark_list)
+            # fingers = [index, middle, ring, pinky] as True/False
+            is_peace_sign = fingers == [True,True,False,False]
+            is_open_palm = fingers == [True,True,True,True] and pinch_status != "Pinched"
+                
+            if is_open_palm:
+                open_palm_counter += 1
+            else:
+                open_palm_counter = 0
 
+            if is_peace_sign:
+                peace_sign_counter += 1
+            else:
+                peace_sign_counter = 0
+
+            if open_palm_counter == required_frames:
+                drawing_segments = []
+                drawing_strokes = []
+
+            if peace_sign_counter == required_frames:
+                current_color_index = (current_color_index + 1) % len(ink_colors)
+            
             if len(drawing_strokes)>0:
                 print(f"total strokes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
 
