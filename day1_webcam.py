@@ -50,6 +50,8 @@ peace_sign_counter = 0
 required_frames = 5
 #=======================================================================================================================================
 
+confirm_counter = 0
+
 while True:
     success, frame = cap.read()
     if not success:
@@ -60,6 +62,7 @@ while True:
 
     rgb_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
     result = hands.process(rgb_frame)
+    all_index_tips = []
 
     if result.multi_hand_landmarks:
         print(f"Hands Found: {len(result.multi_hand_landmarks)}")
@@ -104,7 +107,8 @@ while True:
             middle_knuckle = landmark_list[9]
             index_tip = landmark_list[8]
             thumb_tip = landmark_list[4]
-
+            all_index_tips.append(index_tip)
+            
             cv2.putText(frame, handedness, (wrist[0] - 20, wrist[1] + 35),
                             cv2.FONT_HERSHEY_COMPLEX, 0.9, (255,255,255),1)
 
@@ -173,7 +177,7 @@ while True:
                 print(f"total strokes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
 
 
-        
+    print(f"collected tips : {all_index_tips}")
             #print(f"pinch ratio : {pinch_ratio:.2f}---->{pinch_status}")
             #print(f"raw : {is_pinched_now} | smoothed: {pinch_status} | pinch history: {pinch_history}")
             #print(f"wrist at : {wrist}")
@@ -181,7 +185,28 @@ while True:
             #print(f"index fingertip at : {index_tip}")
             #print(f"thumb fingertip at : {thumb_tip}")
             #print(f"palm size is : {palm_size}")
-          
+
+    if len(all_index_tips) == 2:
+        tip1 = all_index_tips[0]
+        tip2 = all_index_tips[1]
+        x1,y1 = tip1
+        x2,y2 = tip2
+        distance_between_hands = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+        #print(f"distance calculated : {distance_between_hands}")
+        is_confirmed_gesture = distance_between_hands<20
+    else:
+        is_confirmed_gesture = False
+
+    if is_confirmed_gesture:
+        confirm_counter += 1
+    else:
+        confirm_counter = 0
+
+    if confirm_counter == required_frames:
+        print(f"gesture confirmed")
+
+
+
     canvas = np.zeros_like(frame)
     current_time = time.time()
     still_alive_segments = []
@@ -197,13 +222,13 @@ while True:
     drawing_segments = still_alive_segments
     frame = cv2.addWeighted(frame, 1.0, canvas,1.0,0)    
 
-    current_frame_time = time.time()
-    time_taken = current_frame_time - prev_frame_time
-    fps = 1/time_taken if time_taken>0 else 0
-    prev_frame_time = current_frame_time
+    #current_frame_time = time.time()
+    #time_taken = current_frame_time - prev_frame_time
+    #fps = 1/time_taken if time_taken>0 else 0
+    #prev_frame_time = current_frame_time
 
-    cv2.putText(frame, f"FPS: {int(fps)}", (10,30), 
-                cv2.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 2)
+    #cv2.putText(frame, f"FPS: {int(fps)}", (10,30), 
+     #           cv2.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 2)
 
     
     cv2.imshow("Day11-- Taha's Webcam Feed (FPS test)", frame)

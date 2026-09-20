@@ -1792,4 +1792,94 @@ still trigger reliably.
 
 ---
 
-## Day 19 — *(pending)*
+## Day 19 (Roadmap Day 27) — Two-Hand Confirm Gesture
+
+### Concept learned
+Every gesture built before this analyzed one hand at a time, inside the
+per-hand loop. Comparing two hands to each other requires a different
+approach: collect each hand's relevant data point into a list *while* the
+per-hand loop runs, then perform the actual comparison *after* the loop
+completes — once data from all detected hands is available together. This
+is the first feature requiring cross-hand comparison rather than per-hand
+analysis.
+
+### Key building blocks
+- `all_index_tips = []` reset fresh each frame, `.append(index_tip)` inside
+  the per-hand loop — collects one point per hand, in detection order
+- `if len(all_index_tips) == 2:` — safety guard ensuring the comparison only
+  runs when exactly two hands are actually present, preventing an
+  `IndexError` if only one hand (or a MediaPipe glitch reporting 3+ hands)
+  is detected
+- Reused the exact distance formula from Day 5/6 (`math.sqrt((x2-x1)**2 +
+  (y2-y1)**2)`), applied to two index fingertips instead of palm landmarks
+- Reused the exact consecutive-counter stability pattern from Day 18
+  (`== REQUIRED_FRAMES`, not `>=`) to prevent single-frame false triggers
+
+### Threshold calibration (real data)
+Ran a live test, bringing both index fingertips together:
+- **Genuine touch:** distances of 1.0–7.0 (very tight, consistent cluster)
+- **Clearly separated:** distances of 14+ climbing into the hundreds
+- **Chosen threshold: 35** — sits comfortably in the large gap between the
+  touch cluster and the separated range, confirmed safe via real logged data
+  rather than guessing
+
+### Code — Day 19
+```python
+# setup, before the loop:
+confirm_counter = 0
+REQUIRED_FRAMES = 5
+
+# inside the loop, before the per-hand loop:
+all_index_tips = []
+
+# inside the per-hand loop, after index_tip is calculated:
+all_index_tips.append(index_tip)
+
+# AFTER the per-hand loop ends:
+if len(all_index_tips) == 2:
+    tip1, tip2 = all_index_tips
+    x1, y1 = tip1
+    x2, y2 = tip2
+    distance_between_hands = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    is_confirmed_gesture = distance_between_hands < 35
+else:
+    is_confirmed_gesture = False
+
+if is_confirmed_gesture:
+    confirm_counter += 1
+else:
+    confirm_counter = 0
+
+if confirm_counter == REQUIRED_FRAMES:
+    print("gesture confirmed")   # placeholder — Day 20 replaces with a
+                                   # real visual animation
+```
+
+### Practice tasks assigned
+1. Collect both hands' index fingertips into a list during the per-hand loop
+2. Calculate distance between them once both are available, with a 2-hand
+   safety check
+3. Add stability counter, calibrate threshold using real test data
+4. Test single-hand case (no crash) and two-hand touch case (fires once)
+
+### My completed task / code
+All steps completed and verified working correctly across three separate
+live test runs — "gesture confirmed" printed exactly once per genuine
+touch-and-hold, correctly ignored small jitter while fingers stayed close,
+and correctly handled a brief MediaPipe glitch reporting 3 hands in one
+frame (safety check meant this didn't cause any issue) as well as the
+transition back down to 1 hand with no crash.
+
+### Notes / things that tripped me up
+- Needed a step-by-step (and Roman Urdu) walkthrough to understand *why* the
+  per-hand loop can't directly compare two hands to each other, and why
+  collecting into a list first, then comparing after the loop, solves this
+- Understood that this specific technique (two-hand comparison) is not
+  something the original roadmap detailed as its own explicit lesson before
+  Day 27's one-line description — it required deriving the "collect first,
+  then compare after the loop" pattern from first principles, guided step by
+  step, rather than following a pre-written recipe
+
+---
+
+## Day 20 — *(pending)*
