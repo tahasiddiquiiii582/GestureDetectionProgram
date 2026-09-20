@@ -51,6 +51,9 @@ required_frames = 5
 #=======================================================================================================================================
 
 confirm_counter = 0
+confirm_animation_start = None
+animation_duration = 2.0
+
 
 while True:
     success, frame = cap.read()
@@ -192,7 +195,7 @@ while True:
         x1,y1 = tip1
         x2,y2 = tip2
         distance_between_hands = math.sqrt((x2-x1)**2 + (y2-y1)**2)
-        #print(f"distance calculated : {distance_between_hands}")
+        print(f"distance calculated : {distance_between_hands}")
         is_confirmed_gesture = distance_between_hands<20
     else:
         is_confirmed_gesture = False
@@ -203,7 +206,9 @@ while True:
         confirm_counter = 0
 
     if confirm_counter == required_frames:
-        print(f"gesture confirmed")
+        confirm_animation_start = time.time()
+        confirm_animation_point = ((x1+x2)//2 , (y1+y2)//2)
+
 
 
 
@@ -221,6 +226,22 @@ while True:
             still_alive_segments.append((point1, point2, birth_time))
     drawing_segments = still_alive_segments
     frame = cv2.addWeighted(frame, 1.0, canvas,1.0,0)    
+
+    if confirm_animation_start is not None:
+        elapsed = time.time() - confirm_animation_start
+
+        if elapsed < animation_duration:
+            progress = elapsed/animation_duration
+            radius = int(20 + progress*60)
+            opacity = 1.0 - progress
+
+            color = (0, int(255*opacity), int(255*opacity))
+            cv2.circle(canvas,confirm_animation_point,radius,color,3)
+            frame = cv2.addWeighted(frame,1.0 , canvas,1.0,0)
+        else:
+            confirm_animation_start = None
+        
+
 
     #current_frame_time = time.time()
     #time_taken = current_frame_time - prev_frame_time

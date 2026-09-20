@@ -1882,4 +1882,91 @@ transition back down to 1 hand with no crash.
 
 ---
 
-## Day 20 — *(pending)*
+## Day 20 (Roadmap Day 28) — "Confirmed" Visual Animation
+
+### Concept learned
+Turning the Day 19 print statement into a real visual animation reuses the
+exact same "age-based fade" technique from Day 15 — recording a birth time,
+calculating elapsed time each frame, and deriving a progress value (0.0 to
+1.0) from it. Here, that progress value drives two things simultaneously: an
+expanding radius (small to large) and a fading opacity (full to zero),
+producing a burst/ring effect that grows and fades over a fixed duration.
+
+### Key building blocks
+- `confirm_animation_start = None` — sentinel value meaning "no animation
+  currently active"; set to `time.time()` the moment the gesture confirms,
+  reset back to `None` once the duration elapses
+- `progress = elapsed / ANIMATION_DURATION` — normalizes elapsed time into a
+  0.0–1.0 fraction regardless of the chosen duration length
+- `radius = int(20 + progress * 60)` — interpolates from a starting size to
+  an ending size as progress increases
+- `opacity = 1.0 - progress` — always starts at 1.0 and ends at 0.0,
+  regardless of `ANIMATION_DURATION`'s value; duration only controls how
+  long it takes to get there, not the opacity range itself
+
+### Code — Day 20
+```python
+# setup, before the loop:
+confirm_animation_start = None
+ANIMATION_DURATION = 2.0
+
+# trigger, replacing the Day 19 print statement:
+if confirm_counter == REQUIRED_FRAMES:
+    confirm_animation_start = time.time()
+    confirm_animation_point = ((x1 + x2) // 2, (y1 + y2) // 2)
+
+# drawing, after the canvas/frame merge for fading ink:
+if confirm_animation_start is not None:
+    elapsed = time.time() - confirm_animation_start
+
+    if elapsed < ANIMATION_DURATION:
+        progress = elapsed / ANIMATION_DURATION
+        radius = int(20 + progress * 60)
+        opacity = 1.0 - progress
+
+        color = (0, int(255 * opacity), int(255 * opacity))
+        cv2.circle(canvas, confirm_animation_point, radius, color, 3)
+        frame = cv2.addWeighted(frame, 1.0, canvas, 1.0, 0)
+    else:
+        confirm_animation_start = None
+```
+
+### Practice tasks assigned
+1. Add animation start/duration setup variables
+2. Replace the print trigger with recording animation start time + point
+3. Draw an expanding, fading ring based on elapsed time
+4. Test: confirm gesture, watch for a visible ring that grows and fades
+   over the set duration
+
+### My completed task / code
+Hit a real bug on first attempt: the ring was drawn onto `canvas` **after**
+`canvas` had already been merged into `frame` for that frame via
+`cv2.addWeighted` — meaning the circle only existed on a `canvas` variable
+that was no longer going to be displayed that frame, so nothing appeared.
+Diagnosed the two valid fixes: (1) draw directly onto `frame` after the
+merge, or (2) draw onto `canvas` and then merge a second time. Chose option
+2 for this implementation. Also caught two smaller issues along the way:
+`opacity = 2.0 - progress` was mistakenly written instead of `1.0 - progress`
+(would never fully fade to zero), and briefly confused `ANIMATION_DURATION`
+(how long the animation lasts) with the opacity formula (which is always
+scaled 0.0–1.0 regardless of duration length) before clarifying the
+distinction. Final version confirmed working — a visible expanding, fading
+ring appears at the confirm point and disappears cleanly after the set
+duration. Also tightened the Day 19 threshold from 35 down to 20 based on
+further testing, still comfortably within the safe range identified from
+real touch-distance data (1–7).
+
+### Notes / things that tripped me up
+- The core bug (drawing to a canvas after it was already merged into the
+  displayed frame) is a variation of a lesson-worthy general principle:
+  operations must happen in the correct order relative to when a value is
+  actually "read" for display — writing to a variable after its contents
+  were already copied elsewhere doesn't retroactively affect the copy
+- Clarified the difference between a duration setting (how long something
+  takes) and a normalized progress/opacity value (always 0.0–1.0
+  regardless of duration) — these are related but distinct concepts that
+  shouldn't be conflated
+
+---
+
+## Day 21 — *(pending)*
