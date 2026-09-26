@@ -1969,4 +1969,150 @@ real touch-distance data (1–7).
 
 ---
 
-## Day 21 — *(pending)*
+## Day 21 (Roadmap Day 29) — Full Integration Test
+
+### Concept learned
+Testing all features together (not just individually) surfaces interaction
+bugs that don't appear when each feature is tested in isolation. Running a
+full pinch → color → clear → confirm sequence, with both hands active
+simultaneously, revealed three separate real bugs — all sharing the same
+root cause pattern already established earlier in the project: **state that
+should be tracked per-hand was instead being tracked globally/shared**.
+
+### Bug 1 — Cross-hand line connections
+**Symptom:** while drawing with one hand, bringing a second hand into frame
+occasionally caused a stray line connecting the two hands' points together.
+**Root cause:** `drawing_strokes` (a single shared list) mixed points from
+both hands together, since nothing distinguished which hand a point
+belonged to.
+**Fix:** replaced with a dictionary, `active_strokes = {"Left": [...],
+"Right": [...]}`, keyed by `handedness`, so each hand's stroke is tracked
+completely independently. Same fix pattern applied to `was_pinched` →
+`was_pinched_per_hand`.
+
+### Bug 2 — Second hand drawing without pinching
+**Symptom:** one hand actively pinch-drawing caused a second, non-pinching
+hand's index finger to also draw.
+**Root cause:** `pinch_history` (the Day 7 smoothing buffer) was also a
+single shared list — both hands' raw pinch readings were being mixed into
+one history, so one hand's real pinches could push the shared majority vote
+toward "Pinched" even for a hand that wasn't pinching at all.
+**Fix:** converted to `pinch_history_per_hand = {}`, keyed by handedness,
+giving each hand its own independent smoothing buffer. Also caught and
+corrected a related bug in the majority-vote line: `buffer_size // 5` (from
+an earlier edit) made the condition too lenient (`3 // 5 = 0`, meaning a
+single `True` reading was enough) — corrected back to `buffer_size // 2`,
+the original Day 7 design.
+
+### Bug 3 — Color change applying to both hands
+**Symptom:** using the peace sign to change ink color changed the color of
+*both* hands' strokes, not just the hand performing the gesture.
+**Root cause:** `current_color_index` was a single shared variable, and
+`peace_sign_counter` was also shared — so one hand's peace sign affected
+global state.
+**Fix:** added `color_index_per_hand = {}` and `peace_sign_counter_per_hand
+= {}`, both keyed by handedness. Additionally, each drawn segment now
+records *which color index was active for that hand at the moment of
+creation* — segments store `(point1, point2, birth_time, color_index)`
+instead of just `(point1, point2, birth_time)`, so a stroke's color is
+locked in permanently when drawn, rather than being looked up from a
+"current" global value that could change later.
+
+### Debugging notes on introduced typos
+While applying these fixes, two `TypeError`/`AttributeError` crashes
+occurred from small syntax slips: `active_strokes = []` (should have been
+`{}`  — list vs. dictionary) and a missing `[handedness]` on a dictionary
+assignment (which silently overwrote the whole dictionary with a plain
+number). Both were diagnosed directly from the Python error message
+identifying the mismatched type, reinforcing that these error messages
+reliably point at the actual mistake once read carefully.
+
+### Bug 4 — Cross-hand line jump from MediaPipe handedness misreads
+**Symptom:** occasional stray long lines connecting one hand's stroke to a
+completely different location, especially when both hands were close
+together (notably right around the confirm-gesture moment).
+**Root cause:** MediaPipe's own Left/Right classification can briefly
+flicker/misreport for a single frame, especially when hands are close or
+overlapping — causing one hand's point to be filed under the wrong
+dictionary key for that frame.
+**Fix:** added a distance-based sanity check before appending a new point —
+if the new point is farther than `MAX_JUMP` (80px) from that hand's last
+recorded point, treat it as a fresh stroke instead of connecting to
+(likely) the wrong hand's data, rather than trying to fix MediaPipe's
+classification directly.
+
+### Clarification on confirm gesture's scope
+Verified against the original spec: the two-hand confirm gesture's only
+required behavior is the visual animation itself ("a burst/ring effect or
+text overlay that appears briefly") — no additional functional action (e.g.
+saving, mode-switching) was ever part of the spec. Current implementation
+fully satisfies this.
+
+### Notes / things that tripped me up
+- All three/four bugs traced back to the same underlying lesson: any state
+  meant to apply per-hand must be stored in a per-hand structure
+  (dictionary keyed by handedness), never a single shared variable — a
+  principle first learned with `was_pinched` in Day 13, now generalized
+  across five different pieces of state (strokes, pinch history, was_pinched,
+  color index, peace-sign counter)
+- Distinguished between fixing a root cause directly (not possible for
+  MediaPipe's internal handedness classification) versus adding a practical
+  safety guard around its symptoms (the max-jump distance check) when the
+  root cause is outside the project's own code
+
+---
+
+## Day 22 (Roadmap Day 30) — Final Polish
+
+### Concept learned
+Final polish covers performance tuning, usability (on-screen guidance for
+someone using the program without prior explanation), and preparing
+deliverables for presentation — distinct from feature-building, but equally
+part of shipping a complete, presentable project.
+
+### Work completed
+1. **Performance tuning:** `segment_lifetime` had been increased to `10.0`
+   during earlier testing, causing a large number of simultaneously-alive
+   fading segments to accumulate and re-render each frame, dropping FPS.
+   Reduced back to a smaller value for better performance; re-enabled the
+   FPS counter (previously commented out) to verify.
+2. **On-screen instructions:** added a small always-visible text panel
+   listing each gesture and its action, so the program is usable by someone
+   (e.g. the boss) without needing a separate explanation:
+   ```python
+   instructions = [
+       "Pinch (thumb+index) = Draw",
+       "Peace sign = Change color",
+       "Open palm = Clear canvas",
+       "Two hands touch = Confirm"
+   ]
+   y_offset = frame.shape[0] - 100
+   for i, text in enumerate(instructions):
+       cv2.putText(frame, text, (10, y_offset + i * 22),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+   ```
+3. **Full final test:** ran the complete feature set together (pinch-draw
+   with both hands independently, per-hand color change, open-palm clear,
+   two-hand confirm animation) after all Day 21 bug fixes — confirmed
+   working correctly with no remaining cross-hand interference.
+
+### Remaining task (deliberately outside this coding roadmap)
+- **Demo video + short technical write-up for the boss** — planned for the
+  following day, separate from the code itself. This is the only outstanding
+  item from the original 30-day roadmap's Day 30 checklist.
+
+### Verification against original requirements
+Cross-checked completed work against both sources of requirements:
+- **Boss's chat instructions:** gesture detection program ✅, plot the
+  drawing ✅, real-time video overlay like WhatsApp/IG filters ✅ — all
+  confirmed complete
+- **Video description's 8 explicit features** (custom glow HUD, palm-
+  normalized pinch-to-draw, fading ink, peace-sign color change, open-palm
+  clear, two-hand confirm animation, everything generated live) — all 8
+  confirmed complete, including refinements (per-hand tracking, stability
+  buffers) that go beyond the original spec's literal wording but were
+  necessary to make the specified features work correctly with two hands
+
+**Project status: all coding work complete. Only the demo video and
+write-up remain, to be completed separately from this journal's coding
+roadmap.**

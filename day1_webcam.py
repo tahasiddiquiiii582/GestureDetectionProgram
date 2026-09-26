@@ -20,9 +20,11 @@ pinch_history = []
 buffer_size= 3
 prev_frame_time = 0
 was_pinched= False
-drawing_strokes = []
 drawing_segments = []
-segment_lifetime = 10.0
+segment_lifetime = 3.0
+active_strokes = {} # e.g. {"Left": [...], "Right": [...]}
+was_pinched_per_hand = {} # e.g. {"Left": False, "Right": True}
+pinch_history_per_hand = {} # e.g. {"Left": [...], "Right": [...]}
 
 #=======================================================================================================================================
 def fingers_up(landmark_list):
@@ -46,8 +48,10 @@ current_color_index = 0
 #was_open_palm = False
 
 open_palm_counter = 0
-peace_sign_counter = 0
+#peace_sign_counter = 0
 required_frames = 5
+color_index_per_hand = {}  # e.g. {"Left": 0, "Right": 2}
+peace_sign_counter_per_hand = {} # each hand's different counter is needed
 #=======================================================================================================================================
 
 confirm_counter = 0
@@ -127,32 +131,52 @@ while True:
 
             is_pinched_now = pinch_ratio<0.4
 
+            pinch_history = pinch_history_per_hand.get(handedness, [])
+ 
             pinch_history.append(is_pinched_now)
             if len(pinch_history)>buffer_size:
                 pinch_history.pop(0)
 
-            if pinch_history.count(True) > buffer_size // 5:
+            pinch_history_per_hand[handedness] = pinch_history    
+
+            if pinch_history.count(True) > buffer_size // 2:
                 pinch_status = "Pinched"
             else:
                 pinch_status = "Not Pinched"
 
+            was_pinched = was_pinched_per_hand.get(handedness, False)
+
             if pinch_status =="Pinched" and not was_pinched:
-                drawing_strokes.append([])
+                active_strokes[handedness] = []
             if pinch_status == "Pinched":
-                if len(drawing_strokes) == 0:
-                    drawing_strokes.append([])
+                if handedness not in active_strokes or len(active_strokes.get(handedness, [])) == 0:
+                    active_strokes[handedness] = []
 
                 midpoint_x = (x3 + x4)//2
                 midpoint_y = (y3 + y4)//2
                 new_point = (midpoint_x,midpoint_y)
-                drawing_strokes[-1].append(new_point)
+                
+                if len(active_strokes[handedness]) >= 1:
+                    last_point = active_strokes[handedness][-1]
+                    lx, ly = last_point
+                    jump_distance = math.sqrt((midpoint_x - lx) ** 2 + (midpoint_y - ly) ** 2)
 
-                if len(drawing_strokes[-1]) >= 2:
-                    previous_point = drawing_strokes[-1][-2]
+                    MAX_JUMP = 80   # if the new point is farther than this, it's likely a
+                                                        # mislabeled hand (MediaPipe briefly swapped Left/Right)
+
+                    if jump_distance > MAX_JUMP:
+                        active_strokes[handedness] = []   # start a fresh stroke instead of
+                                                                                 # connecting to the wrong hand's point
+
+                active_strokes[handedness].append(new_point)
+
+                if len(active_strokes[handedness]) >= 2:
+                    previous_point = active_strokes[handedness][-2]
                     birth_time = time.time()
-                    drawing_segments.append((previous_point, new_point, birth_time))
+                    this_hand_color_index = color_index_per_hand.get(handedness, 0)
+                    drawing_segments.append((previous_point, new_point, birth_time, this_hand_color_index))
 
-            was_pinched = (pinch_status == "Pinched")
+            was_pinched_per_hand[handedness] = (pinch_status == "Pinched")
             
             fingers = fingers_up(landmark_list)
             # fingers = [index, middle, ring, pinky] as True/False
@@ -164,20 +188,25 @@ while True:
             else:
                 open_palm_counter = 0
 
+            peace_sign_counter = peace_sign_counter_per_hand.get(handedness, 0)
+
             if is_peace_sign:
                 peace_sign_counter += 1
             else:
                 peace_sign_counter = 0
 
+            peace_sign_counter_per_hand[handedness] = peace_sign_counter
+
             if open_palm_counter == required_frames:
                 drawing_segments = []
-                drawing_strokes = []
+                active_strokes = {}
 
             if peace_sign_counter == required_frames:
-                current_color_index = (current_color_index + 1) % len(ink_colors)
+                current_color = color_index_per_hand.get(handedness, 0)
+                color_index_per_hand[handedness] = (current_color + 1) % len(ink_colors)
             
-            if len(drawing_strokes)>0:
-                print(f"total strokes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
+            #if len(drawing_strokes)>0:
+               # print(f"total strokes {len(drawing_strokes)}| length of current strokes {len(drawing_strokes[-1])}")
 
 
     print(f"collected tips : {all_index_tips}")
@@ -216,14 +245,14 @@ while True:
     current_time = time.time()
     still_alive_segments = []
 
-    for point1,point2, birth_time in drawing_segments:
+    for point1,point2, birth_time, color_idx in drawing_segments:
         age = current_time-birth_time
         if age < segment_lifetime:
             opacity = 1.0 - (age/segment_lifetime)
-            base_color = ink_colors[current_color_index]
+            base_color = ink_colors[color_idx]
             color = tuple(int(c * opacity) for c in base_color)
             cv2.line(canvas, point1, point2, color, 3)
-            still_alive_segments.append((point1, point2, birth_time))
+            still_alive_segments.append((point1, point2, birth_time, color_idx))
     drawing_segments = still_alive_segments
     frame = cv2.addWeighted(frame, 1.0, canvas,1.0,0)    
 
@@ -252,6 +281,19 @@ while True:
      #           cv2.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 2)
 
     
+    instructions = [
+    "Pinch (thumb+index) = Draw",
+    "Peace sign = Change color",
+    "Open palm = Clear canvas",
+    "Two hands touch = Confirm"
+    ]
+
+    y_offset = frame.shape[0] - 100
+    for i, text in enumerate(instructions):
+         cv2.putText(frame, text, (10, y_offset + i * 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+
     cv2.imshow("Day11-- Taha's Webcam Feed (FPS test)", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
