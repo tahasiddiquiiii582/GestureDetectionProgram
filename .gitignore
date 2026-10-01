@@ -1,0 +1,12 @@
+# Ignore specific personal/unrelated files
+Rehana Yasmeen--Teacher--TFES Karachi, Malir.pdf
+
+# Common Python-related files that shouldn't be tracked
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
